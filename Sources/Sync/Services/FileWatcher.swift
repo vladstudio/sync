@@ -16,7 +16,7 @@ final class FileWatcher: @unchecked Sendable {
     func start() {
         guard stream == nil else { return }
 
-        let pathsToWatch = [path] as CFArray
+        let pathsToWatch = [path as CFString] as CFArray
         var context = FSEventStreamContext()
         context.info = Unmanaged.passUnretained(self).toOpaque()
 

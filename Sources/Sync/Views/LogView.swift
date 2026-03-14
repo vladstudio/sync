@@ -27,10 +27,10 @@ struct LogView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                         .padding()
-                        .id("bottom")
+                    Color.clear.frame(height: 1).id("anchor")
                 }
                 .onChange(of: state.log) { _, _ in
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                    proxy.scrollTo("anchor", anchor: .bottom)
                 }
             }
             .background(Color(nsColor: .textBackgroundColor))

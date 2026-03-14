@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 import AppKit
 
 @MainActor
@@ -9,17 +8,23 @@ final class SyncManager: ObservableObject {
     let store: ConfigStore
     private var timers: [UUID: Timer] = [:]
     private var watchers: [UUID: FileWatcher] = [:]
-    private var processes: [UUID: Task<Void, Never>] = [:]
+    private var runningProcesses: [UUID: Process] = [:]
 
     struct SyncState {
         var isRunning = false
         var log = ""
-        var lastRunDate: Date?
-        var lastSuccess: Bool?
     }
+
+    private var schedulesStarted = false
 
     init(store: ConfigStore) {
         self.store = store
+    }
+
+    func startAllOnce() {
+        guard !schedulesStarted else { return }
+        schedulesStarted = true
+        startAll()
     }
 
     func startAll() {
@@ -33,8 +38,10 @@ final class SyncManager: ObservableObject {
         timers.removeAll()
         watchers.values.forEach { $0.stop() }
         watchers.removeAll()
-        processes.values.forEach { $0.cancel() }
-        processes.removeAll()
+        let ids = Array(runningProcesses.keys)
+        for id in ids {
+            cancelSync(id: id)
+        }
     }
 
     func refreshSchedules() {
@@ -43,9 +50,10 @@ final class SyncManager: ObservableObject {
     }
 
     func setupSchedule(for config: SyncConfig) {
-        // Clear existing
         timers[config.id]?.invalidate()
+        timers.removeValue(forKey: config.id)
         watchers[config.id]?.stop()
+        watchers.removeValue(forKey: config.id)
 
         switch config.schedule {
         case .manual:
@@ -69,58 +77,75 @@ final class SyncManager: ObservableObject {
         }
     }
 
+    func teardownSchedule(for id: UUID) {
+        timers[id]?.invalidate()
+        timers.removeValue(forKey: id)
+        watchers[id]?.stop()
+        watchers.removeValue(forKey: id)
+    }
+
     func state(for id: UUID) -> SyncState {
         syncStates[id] ?? SyncState()
     }
 
-    func syncNow(id: UUID, dryRun: Bool = false) {
+    func syncNow(id: UUID) {
         guard let config = store.configs.first(where: { $0.id == id }) else { return }
+        runSync(config: config, dryRun: false)
+    }
+
+    func dryRun(config: SyncConfig) {
+        runSync(config: config, dryRun: true)
+    }
+
+    private func runSync(config: SyncConfig, dryRun: Bool) {
+        let id = config.id
         guard !(syncStates[id]?.isRunning ?? false) else { return }
 
         syncStates[id] = SyncState(isRunning: true, log: dryRun ? "=== DRY RUN ===\n" : "")
 
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
-        let task = Task {
+        Task {
+            var success = false
             do {
-                try await rclone.sync(config: config, dryRun: dryRun) { [weak self] output in
-                    Task { @MainActor [weak self] in
-                        self?.syncStates[id]?.log.append(output)
-                    }
-                }
-                await MainActor.run {
-                    self.syncStates[id]?.isRunning = false
-                    self.syncStates[id]?.lastRunDate = Date()
-                    self.syncStates[id]?.lastSuccess = true
-                    if !dryRun {
-                        if let i = self.store.configs.firstIndex(where: { $0.id == id }) {
-                            self.store.configs[i].lastSyncDate = Date()
-                            self.store.configs[i].lastSyncSuccess = true
-                            self.store.saveConfigs()
+                try await rclone.sync(
+                    config: config,
+                    dryRun: dryRun,
+                    onProcess: { [weak self] process in
+                        Task { @MainActor [weak self] in
+                            self?.runningProcesses[id] = process
+                        }
+                    },
+                    onOutput: { [weak self] output in
+                        Task { @MainActor [weak self] in
+                            self?.syncStates[id]?.log.append(output)
                         }
                     }
-                }
+                )
+                success = true
             } catch {
                 await MainActor.run {
                     self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
-                    self.syncStates[id]?.isRunning = false
-                    self.syncStates[id]?.lastRunDate = Date()
-                    self.syncStates[id]?.lastSuccess = false
-                    if !dryRun {
-                        if let i = self.store.configs.firstIndex(where: { $0.id == id }) {
-                            self.store.configs[i].lastSyncDate = Date()
-                            self.store.configs[i].lastSyncSuccess = false
-                            self.store.saveConfigs()
-                        }
-                    }
                 }
             }
+            await MainActor.run {
+                self.finishSync(id: id, success: success, dryRun: dryRun)
+            }
         }
-        processes[id] = task
+    }
+
+    private func finishSync(id: UUID, success: Bool, dryRun: Bool) {
+        runningProcesses.removeValue(forKey: id)
+        syncStates[id]?.isRunning = false
+        guard !dryRun, let i = store.configs.firstIndex(where: { $0.id == id }) else { return }
+        store.configs[i].lastSyncDate = Date()
+        store.configs[i].lastSyncSuccess = success
+        store.saveConfigs()
     }
 
     func cancelSync(id: UUID) {
-        processes[id]?.cancel()
-        processes[id] = nil
+        if let process = runningProcesses.removeValue(forKey: id), process.isRunning {
+            process.terminate()
+        }
         syncStates[id]?.isRunning = false
         syncStates[id]?.log.append("\n--- Cancelled ---\n")
     }

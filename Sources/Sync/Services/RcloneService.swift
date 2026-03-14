@@ -10,8 +10,8 @@ struct RcloneService: Sendable {
     func listRemotes() async throws -> [String] {
         let output = try await run(arguments: ["listremotes"])
         return output.split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces).trimmingSuffix(":") }
-            .map(String.init)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .map { $0.hasSuffix(":") ? String($0.dropLast()) : $0 }
             .filter { !$0.isEmpty }
     }
 
@@ -28,10 +28,14 @@ struct RcloneService: Sendable {
             args = [config.mode.rawValue, remoteFull, config.localPath]
         }
 
-        args += ["--checksum", "--update", "--progress"]
+        args += ["--checksum", "--progress"]
+        if config.direction != .bidirectional {
+            args.append("--update")
+        }
 
         if config.keepDeletedFiles {
             let ts = ISO8601DateFormatter().string(from: Date())
+                .replacingOccurrences(of: ":", with: "-")
             let backupDir = ConfigStore.backupsDir
                 .appendingPathComponent(config.id.uuidString)
                 .appendingPathComponent(ts)
@@ -59,10 +63,16 @@ struct RcloneService: Sendable {
         return args
     }
 
-    /// Runs sync and returns the Process so callers can terminate it.
-    func sync(config: SyncConfig, dryRun: Bool = false, onOutput: @Sendable @escaping (String) -> Void) async throws -> Process {
+    /// Runs sync. Calls `onProcess` with the Process immediately after launch (before it finishes)
+    /// so callers can store it for cancellation.
+    func sync(
+        config: SyncConfig,
+        dryRun: Bool = false,
+        onProcess: @Sendable @escaping (Process) -> Void,
+        onOutput: @Sendable @escaping (String) -> Void
+    ) async throws {
         let arguments = buildArguments(config: config, dryRun: dryRun)
-        return try await runStreaming(arguments: arguments, onOutput: onOutput)
+        try await runStreaming(arguments: arguments, onProcess: onProcess, onOutput: onOutput)
     }
 
     private func run(arguments: [String]) async throws -> String {
@@ -92,10 +102,13 @@ struct RcloneService: Sendable {
         }
     }
 
-    @discardableResult
-    private func runStreaming(arguments: [String], onOutput: @Sendable @escaping (String) -> Void) async throws -> Process {
-        let process = Process()
+    private func runStreaming(
+        arguments: [String],
+        onProcess: @Sendable @escaping (Process) -> Void,
+        onOutput: @Sendable @escaping (String) -> Void
+    ) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let process = Process()
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: rclonePath)
             process.arguments = arguments
@@ -120,12 +133,12 @@ struct RcloneService: Sendable {
 
             do {
                 try process.run()
+                onProcess(process)
             } catch {
                 pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(throwing: error)
             }
         }
-        return process
     }
 
     enum RcloneError: Error, LocalizedError {
@@ -138,12 +151,5 @@ struct RcloneService: Sendable {
             case .exitCode(let code): "rclone exited with code \(code)"
             }
         }
-    }
-}
-
-private extension Substring {
-    func trimmingSuffix(_ suffix: Character) -> Substring {
-        if last == suffix { return dropLast() }
-        return self
     }
 }

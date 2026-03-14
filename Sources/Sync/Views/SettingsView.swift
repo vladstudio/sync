@@ -1,9 +1,7 @@
 import SwiftUI
-import AppKit
 
 struct SettingsView: View {
     @ObservedObject var store: ConfigStore
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         Form {

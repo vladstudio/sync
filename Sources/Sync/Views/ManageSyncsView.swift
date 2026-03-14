@@ -57,9 +57,9 @@ struct ManageSyncsView: View {
                             }
 
                             Button("Delete") {
-                                manager.stopAll()
+                                manager.cancelSync(id: config.id)
+                                manager.teardownSchedule(for: config.id)
                                 store.deleteConfig(id: config.id)
-                                manager.refreshSchedules()
                             }
                             .foregroundStyle(.red)
                         }
@@ -82,9 +82,6 @@ struct ManageSyncsView: View {
         }
         .sheet(item: $logConfigId) { id in
             LogView(configId: id, manager: manager)
-        }
-        .onAppear {
-            manager.startAll()
         }
     }
 }

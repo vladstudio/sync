@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 struct EditSyncView: View {
     @ObservedObject var store: ConfigStore
@@ -8,7 +7,6 @@ struct EditSyncView: View {
 
     @State private var config: SyncConfig
     @State private var remotes: [String] = []
-    @State private var loadingRemotes = false
     @State private var scheduleType: Int // 0=manual, 1=interval, 2=onLocalChange
     @State private var intervalMinutes: Int
     @State private var excludeText: String
@@ -67,6 +65,11 @@ struct EditSyncView: View {
                         Text(d.label).tag(d)
                     }
                 }
+                .onChange(of: config.direction) { _, newValue in
+                    if newValue == .remoteToLocal && scheduleType == 2 {
+                        scheduleType = 0
+                    }
+                }
 
                 Picker("Schedule", selection: $scheduleType) {
                     Text("Manual").tag(0)
@@ -117,10 +120,7 @@ struct EditSyncView: View {
             Section {
                 HStack {
                     Button("Dry Run") {
-                        applySchedule()
-                        config.excludePatterns = excludeText.split(separator: "\n").map(String.init)
-                        onSave(config)
-                        manager.syncNow(id: config.id, dryRun: true)
+                        manager.dryRun(config: preparedConfig())
                         showingLog = true
                     }
 
@@ -128,9 +128,7 @@ struct EditSyncView: View {
 
                     Button("Cancel") { dismiss() }
                     Button("Save") {
-                        applySchedule()
-                        config.excludePatterns = excludeText.split(separator: "\n").map(String.init)
-                        onSave(config)
+                        onSave(preparedConfig())
                         dismiss()
                     }
                     .keyboardShortcut(.defaultAction)
@@ -147,12 +145,15 @@ struct EditSyncView: View {
         }
     }
 
-    private func applySchedule() {
+    private func preparedConfig() -> SyncConfig {
+        var c = config
         switch scheduleType {
-        case 1: config.schedule = .interval(minutes: intervalMinutes)
-        case 2: config.schedule = .onLocalChange
-        default: config.schedule = .manual
+        case 1: c.schedule = .interval(minutes: intervalMinutes)
+        case 2: c.schedule = .onLocalChange
+        default: c.schedule = .manual
         }
+        c.excludePatterns = excludeText.split(separator: "\n").map(String.init)
+        return c
     }
 
     private func pickFolder() {
@@ -166,8 +167,6 @@ struct EditSyncView: View {
     }
 
     private func loadRemotes() async {
-        loadingRemotes = true
-        defer { loadingRemotes = false }
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
         do {
             remotes = try await rclone.listRemotes()

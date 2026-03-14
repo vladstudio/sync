@@ -23,6 +23,7 @@ struct SyncApp: App {
     var body: some Scene {
         MenuBarExtra("Sync", image: "MenuBarIcon") {
             MenuBarView(store: store, manager: manager)
+                .onAppear { manager.startAllOnce() }
         }
 
         Window("Manage Syncs", id: "manage") {
