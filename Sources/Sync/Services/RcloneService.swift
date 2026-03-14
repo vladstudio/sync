@@ -8,6 +8,7 @@ struct RcloneService: Sendable {
     }
 
     func listRemotes() async throws -> [String] {
+        try checkBinary()
         let output = try await run(arguments: ["listremotes"])
         return output.split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespaces) }
@@ -71,6 +72,7 @@ struct RcloneService: Sendable {
         onProcess: @Sendable @escaping (Process) -> Void,
         onOutput: @Sendable @escaping (String) -> Void
     ) async throws {
+        try checkBinary()
         let arguments = buildArguments(config: config, dryRun: dryRun)
         try await runStreaming(arguments: arguments, onProcess: onProcess, onOutput: onOutput)
     }
@@ -141,12 +143,20 @@ struct RcloneService: Sendable {
         }
     }
 
+    private func checkBinary() throws {
+        guard FileManager.default.isExecutableFile(atPath: rclonePath) else {
+            throw RcloneError.notInstalled(rclonePath)
+        }
+    }
+
     enum RcloneError: Error, LocalizedError {
+        case notInstalled(String)
         case failed(String)
         case exitCode(Int)
 
         var errorDescription: String? {
             switch self {
+            case .notInstalled(let path): "rclone not found at \(path). Install it or update the path in Settings."
             case .failed(let msg): msg
             case .exitCode(let code): "rclone exited with code \(code)"
             }

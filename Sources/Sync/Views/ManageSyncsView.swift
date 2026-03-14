@@ -77,7 +77,8 @@ struct ManageSyncsView: View {
         .sheet(item: $editingConfig) { config in
             EditSyncView(store: store, manager: manager, config: config) { updated in
                 store.updateConfig(updated)
-                manager.refreshSchedules()
+                manager.teardownSchedule(for: updated.id)
+                manager.setupSchedule(for: updated)
             }
         }
         .sheet(item: $logConfigId) { id in

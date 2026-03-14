@@ -7,6 +7,7 @@ struct EditSyncView: View {
 
     @State private var config: SyncConfig
     @State private var remotes: [String] = []
+    @State private var remotesLoaded = false
     @State private var remotesError: String?
     @State private var scheduleType: Int // 0=manual, 1=interval, 2=onLocalChange
     @State private var intervalMinutes: Int
@@ -53,6 +54,8 @@ struct EditSyncView: View {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .font(.caption)
+                } else if !remotesLoaded {
+                    ProgressView().controlSize(.small)
                 } else if remotes.isEmpty {
                     Label("No remotes found. Run \"rclone config\" to add one.", systemImage: "info.circle")
                         .foregroundStyle(.secondary)
@@ -186,5 +189,6 @@ struct EditSyncView: View {
             remotes = []
             remotesError = "Could not load remotes: \(error.localizedDescription)"
         }
+        remotesLoaded = true
     }
 }
