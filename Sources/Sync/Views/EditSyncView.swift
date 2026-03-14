@@ -3,24 +3,26 @@ import SwiftUI
 struct EditSyncView: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var manager: SyncManager
-    @Environment(\.dismiss) private var dismiss
 
     @State private var config: SyncConfig
     @State private var remotes: [String] = []
     @State private var remotesLoaded = false
     @State private var remotesError: String?
-    @State private var scheduleType: Int // 0=manual, 1=interval, 2=onLocalChange
+    @State private var scheduleType: Int
     @State private var intervalMinutes: Int
     @State private var excludeText: String
     @State private var showingLog = false
+    @State private var scheduleResetNotice = false
 
     let onSave: (SyncConfig) -> Void
+    var onCancel: (() -> Void)?
     let isEditing: Bool
 
-    init(store: ConfigStore, manager: SyncManager, config: SyncConfig? = nil, onSave: @escaping (SyncConfig) -> Void) {
+    init(store: ConfigStore, manager: SyncManager, config: SyncConfig? = nil, onSave: @escaping (SyncConfig) -> Void, onCancel: (() -> Void)? = nil) {
         self.store = store
         self.manager = manager
         self.onSave = onSave
+        self.onCancel = onCancel
         self.isEditing = config != nil
 
         let c = config ?? SyncConfig()
@@ -82,6 +84,11 @@ struct EditSyncView: View {
                 .onChange(of: config.direction) { _, newValue in
                     if newValue == .remoteToLocal && scheduleType == 2 {
                         scheduleType = 0
+                        scheduleResetNotice = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(4))
+                            await MainActor.run { scheduleResetNotice = false }
+                        }
                     }
                 }
 
@@ -91,6 +98,12 @@ struct EditSyncView: View {
                     if config.direction != .remoteToLocal {
                         Text("On local change").tag(2)
                     }
+                }
+
+                if scheduleResetNotice {
+                    Text("Schedule reset to Manual (not available for Remote → Local)")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
 
                 if scheduleType == 1 {
@@ -103,7 +116,7 @@ struct EditSyncView: View {
                     }
                 }
 
-                Toggle("Keep deleted files (backup)", isOn: $config.keepDeletedFiles)
+                Toggle("Back up deleted files", isOn: $config.keepDeletedFiles)
 
                 if config.keepDeletedFiles {
                     Button("Reveal Backups in Finder") {
@@ -116,7 +129,7 @@ struct EditSyncView: View {
                 TextField("Bandwidth limit", text: Binding(
                     get: { config.bandwidthLimit ?? "" },
                     set: { config.bandwidthLimit = $0.isEmpty ? nil : $0 }
-                ))
+                ), prompt: Text("e.g. 10M, 1.5G"))
                 .textFieldStyle(.roundedBorder)
 
                 VStack(alignment: .leading) {
@@ -138,12 +151,27 @@ struct EditSyncView: View {
                         showingLog = true
                     }
 
+                    if isEditing {
+                        Button("Sync Now") {
+                            let c = preparedConfig()
+                            onSave(c)
+                            manager.syncNow(id: c.id)
+                        }
+                        .disabled(manager.state(for: config.id).isRunning)
+
+                        Button("Log") {
+                            showingLog = true
+                        }
+                    }
+
                     Spacer()
 
-                    Button("Cancel") { dismiss() }
+                    if let onCancel {
+                        Button("Cancel") { onCancel() }
+                    }
+
                     Button("Save") {
                         onSave(preparedConfig())
-                        dismiss()
                     }
                     .keyboardShortcut(.defaultAction)
                     .disabled(config.name.isEmpty || config.localPath.isEmpty || config.remote.isEmpty)
@@ -151,8 +179,6 @@ struct EditSyncView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 500, minHeight: 500)
-        .navigationTitle(isEditing ? "Edit Sync" : "New Sync")
         .task { await loadRemotes() }
         .sheet(isPresented: $showingLog) {
             LogView(configId: config.id, manager: manager)

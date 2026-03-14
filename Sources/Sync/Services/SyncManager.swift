@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+@preconcurrency import UserNotifications
 
 @MainActor
 final class SyncManager: ObservableObject {
@@ -140,6 +141,22 @@ final class SyncManager: ObservableObject {
         store.configs[i].lastSyncDate = Date()
         store.configs[i].lastSyncSuccess = success
         store.saveConfigs()
+
+        if !success {
+            postFailureNotification(name: store.configs[i].name)
+        }
+    }
+
+    private func postFailureNotification(name: String) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Sync Failed"
+            content.body = name
+            let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+            center.add(request)
+        }
     }
 
     func cancelSync(id: UUID) {

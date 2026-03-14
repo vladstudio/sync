@@ -13,17 +13,20 @@ struct SyncApp: App {
         _manager = StateObject(wrappedValue: SyncManager(store: s))
 
         // Register menubar icon as template image from bundle resources
-        if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
+        let resourcesPath = Bundle.main.bundlePath + "/Contents/Resources/MenuBarIcon.png"
+        if let image = NSImage(contentsOfFile: resourcesPath) {
             image.isTemplate = true
-            image.setName("MenuBarIcon")
+            image.size = NSSize(width: 18, height: 18)
+            image.setName("SyncMenuBarIcon")
         }
     }
 
     var body: some Scene {
-        MenuBarExtra("Sync", image: "MenuBarIcon") {
+        MenuBarExtra {
             MenuBarView(store: store, manager: manager)
                 .onAppear { manager.startAllOnce() }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
         }
 
         Window("Manage Syncs", id: "manage") {
@@ -33,7 +36,7 @@ struct SyncApp: App {
 
         Window("Settings", id: "settings") {
             SettingsView(store: store)
-                .frame(width: 400, height: 120)
         }
+        .windowResizability(.contentSize)
     }
 }

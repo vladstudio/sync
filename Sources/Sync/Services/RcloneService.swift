@@ -158,7 +158,21 @@ struct RcloneService: Sendable {
             switch self {
             case .notInstalled(let path): "rclone not found at \(path). Install it or update the path in Settings."
             case .failed(let msg): msg
-            case .exitCode(let code): "rclone exited with code \(code)"
+            case .exitCode(let code): "rclone failed: \(Self.exitCodeDescription(code)) (exit code \(code))"
+            }
+        }
+        private static func exitCodeDescription(_ code: Int) -> String {
+            switch code {
+            case 1: return "general error"
+            case 2: return "not found"
+            case 3: return "permission denied"
+            case 4: return "file not found"
+            case 5: return "temporary error, retries exhausted"
+            case 6: return "fatal error"
+            case 7: return "transfer limit exceeded"
+            case 8: return "no files transferred"
+            case 9: return "filter matched no files"
+            default: return "unknown error"
             }
         }
     }

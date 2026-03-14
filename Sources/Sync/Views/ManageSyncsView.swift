@@ -3,86 +3,97 @@ import SwiftUI
 struct ManageSyncsView: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var manager: SyncManager
-    @State private var editingConfig: SyncConfig?
-    @State private var showingAdd = false
-    @State private var logConfigId: UUID?
+    @State private var selection: UUID?
+    @State private var addingNew = false
+    @State private var deletingConfig: SyncConfig?
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Syncs").font(.title2).bold()
-                Spacer()
-                Button("Add New Sync") { showingAdd = true }
-            }
-            .padding()
-
-            if store.configs.isEmpty {
-                Spacer()
-                Text("No syncs configured. Click \"Add New Sync\" to get started.")
-                    .foregroundStyle(.secondary)
-                Spacer()
-            } else {
-                List {
-                    ForEach(store.configs) { config in
-                        let state = manager.state(for: config.id)
+        NavigationSplitView {
+            List(selection: $selection) {
+                ForEach(store.configs) { config in
+                    let state = manager.state(for: config.id)
+                    VStack(alignment: .leading, spacing: 2) {
                         HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(config.name).font(.headline)
-                                Text("\(config.direction.label) · \(config.mode.label)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-
+                            Text(config.name)
                             Spacer()
-
                             if state.isRunning {
                                 ProgressView().controlSize(.small)
-                                Text("Syncing").foregroundStyle(.secondary).font(.caption)
                             } else if let success = config.lastSyncSuccess {
                                 Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
                                     .foregroundStyle(success ? .green : .red)
+                                    .font(.caption)
                             }
-
-                            Button("Log") {
-                                logConfigId = config.id
-                            }
-
-                            Button("Sync") {
-                                manager.syncNow(id: config.id)
-                            }
-                            .disabled(state.isRunning)
-
-                            Button("Edit") {
-                                editingConfig = config
-                            }
-
-                            Button("Delete") {
-                                manager.cancelSync(id: config.id)
-                                manager.teardownSchedule(for: config.id)
-                                store.deleteConfig(id: config.id)
-                            }
-                            .foregroundStyle(.red)
                         }
-                        .padding(.vertical, 4)
+                        Text("\(config.direction.label) · \(config.schedule.label)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                    .tag(config.id)
                 }
             }
-        }
-        .sheet(isPresented: $showingAdd) {
-            EditSyncView(store: store, manager: manager) { config in
-                store.addConfig(config)
-                manager.setupSchedule(for: config)
+            .toolbar {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button(action: {
+                        addingNew = true
+                        selection = nil
+                    }) {
+                        Image(systemName: "plus")
+                    }
+
+                    Button(action: {
+                        if let id = selection, let config = store.configs.first(where: { $0.id == id }) {
+                            deletingConfig = config
+                        }
+                    }) {
+                        Image(systemName: "minus")
+                    }
+                    .disabled(selection == nil || addingNew)
+                }
+            }
+        } detail: {
+            if addingNew {
+                EditSyncView(store: store, manager: manager) { config in
+                    store.addConfig(config)
+                    manager.setupSchedule(for: config)
+                    addingNew = false
+                    selection = config.id
+                } onCancel: {
+                    addingNew = false
+                }
+            } else if let id = selection, let config = store.configs.first(where: { $0.id == id }) {
+                EditSyncView(store: store, manager: manager, config: config) { updated in
+                    store.updateConfig(updated)
+                    manager.teardownSchedule(for: updated.id)
+                    manager.setupSchedule(for: updated)
+                }
+                .id(id)
+            } else {
+                Text("Select a sync or click + to add one")
+                    .foregroundStyle(.secondary)
             }
         }
-        .sheet(item: $editingConfig) { config in
-            EditSyncView(store: store, manager: manager, config: config) { updated in
-                store.updateConfig(updated)
-                manager.teardownSchedule(for: updated.id)
-                manager.setupSchedule(for: updated)
-            }
+        .frame(minWidth: 700, minHeight: 450)
+        .onChange(of: selection) { _, _ in
+            addingNew = false
         }
-        .sheet(item: $logConfigId) { id in
-            LogView(configId: id, manager: manager)
+        .alert("Delete Sync?", isPresented: Binding(
+            get: { deletingConfig != nil },
+            set: { if !$0 { deletingConfig = nil } }
+        )) {
+            Button("Cancel", role: .cancel) { deletingConfig = nil }
+            Button("Delete", role: .destructive) {
+                if let config = deletingConfig {
+                    manager.cancelSync(id: config.id)
+                    manager.teardownSchedule(for: config.id)
+                    if selection == config.id { selection = nil }
+                    store.deleteConfig(id: config.id)
+                }
+                deletingConfig = nil
+            }
+        } message: {
+            if let config = deletingConfig {
+                Text("Are you sure you want to delete \"\(config.name)\"?")
+            }
         }
     }
 }
