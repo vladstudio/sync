@@ -1,0 +1,74 @@
+import Foundation
+
+@MainActor
+final class ConfigStore: ObservableObject {
+    @Published var configs: [SyncConfig] = []
+    @Published var settings: AppSettings = AppSettings()
+
+    private let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+
+    private let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+
+    nonisolated static let appSupportDir: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Sync", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    nonisolated static let backupsDir: URL = {
+        let dir = appSupportDir.appendingPathComponent("backups", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private var configURL: URL { Self.appSupportDir.appendingPathComponent("config.json") }
+    private var settingsURL: URL { Self.appSupportDir.appendingPathComponent("settings.json") }
+
+    func load() {
+        if let data = try? Data(contentsOf: configURL),
+           let configs = try? decoder.decode([SyncConfig].self, from: data) {
+            self.configs = configs
+        }
+        if let data = try? Data(contentsOf: settingsURL),
+           let settings = try? decoder.decode(AppSettings.self, from: data) {
+            self.settings = settings
+        }
+    }
+
+    func saveConfigs() {
+        guard let data = try? encoder.encode(configs) else { return }
+        try? data.write(to: configURL, options: .atomic)
+    }
+
+    func saveSettings() {
+        guard let data = try? encoder.encode(settings) else { return }
+        try? data.write(to: settingsURL, options: .atomic)
+    }
+
+    func addConfig(_ config: SyncConfig) {
+        configs.append(config)
+        saveConfigs()
+    }
+
+    func updateConfig(_ config: SyncConfig) {
+        if let i = configs.firstIndex(where: { $0.id == config.id }) {
+            configs[i] = config
+            saveConfigs()
+        }
+    }
+
+    func deleteConfig(id: UUID) {
+        configs.removeAll { $0.id == id }
+        saveConfigs()
+    }
+}
