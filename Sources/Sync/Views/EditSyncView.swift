@@ -7,6 +7,7 @@ struct EditSyncView: View {
 
     @State private var config: SyncConfig
     @State private var remotes: [String] = []
+    @State private var remotesError: String?
     @State private var scheduleType: Int // 0=manual, 1=interval, 2=onLocalChange
     @State private var intervalMinutes: Int
     @State private var excludeText: String
@@ -46,6 +47,16 @@ struct EditSyncView: View {
                 HStack {
                     TextField("Local folder", text: $config.localPath)
                     Button("Browse") { pickFolder() }
+                }
+
+                if let error = remotesError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                } else if remotes.isEmpty {
+                    Label("No remotes found. Run \"rclone config\" to add one.", systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
                 }
 
                 Picker("Remote", selection: $config.remote) {
@@ -170,8 +181,10 @@ struct EditSyncView: View {
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
         do {
             remotes = try await rclone.listRemotes()
+            remotesError = nil
         } catch {
             remotes = []
+            remotesError = "Could not load remotes: \(error.localizedDescription)"
         }
     }
 }
