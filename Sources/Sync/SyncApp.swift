@@ -1,5 +1,22 @@
 import SwiftUI
-import AppKit
+
+@MainActor
+enum WindowTracker {
+    private static var count = 0
+
+    static func opened() {
+        count += 1
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    static func closed() {
+        count -= 1
+        if count <= 0 {
+            count = 0
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+}
 
 @main
 struct SyncApp: App {
@@ -11,14 +28,6 @@ struct SyncApp: App {
         s.load()
         _store = StateObject(wrappedValue: s)
         _manager = StateObject(wrappedValue: SyncManager(store: s))
-
-        // Register menubar icon as template image from bundle resources
-        let resourcesPath = Bundle.main.bundlePath + "/Contents/Resources/MenuBarIcon.png"
-        if let image = NSImage(contentsOfFile: resourcesPath) {
-            image.isTemplate = true
-            image.size = NSSize(width: 18, height: 18)
-            image.setName("SyncMenuBarIcon")
-        }
     }
 
     var body: some Scene {

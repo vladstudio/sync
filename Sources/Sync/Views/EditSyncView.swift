@@ -190,7 +190,7 @@ struct EditSyncView: View {
             }
         }
         .formStyle(.grouped)
-        .onChange(of: saveToken) { _, _ in onSave(preparedConfig()) }
+        .onChange(of: preparedConfig()) { _, new in onSave(new) }
         .task { await loadRemotes() }
         .alert("Delete existing backups?", isPresented: $showCleanupAlert) {
             Button("Delete", role: .destructive) { runCleanup() }
@@ -204,15 +204,6 @@ struct EditSyncView: View {
         } message: {
             Text("This will delete all local and remote backups for this sync.")
         }
-    }
-
-    private var saveToken: Int {
-        var hasher = Hasher()
-        hasher.combine(config)
-        hasher.combine(scheduleType)
-        hasher.combine(intervalMinutes)
-        hasher.combine(excludeText)
-        return hasher.finalize()
     }
 
     private func preparedConfig() -> SyncConfig {

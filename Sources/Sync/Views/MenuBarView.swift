@@ -29,46 +29,36 @@ struct MenuBarView: View {
             Text("No syncs configured")
                 .foregroundStyle(.secondary)
         } else {
+            Text("Sync now")
+                .foregroundStyle(.secondary)
             ForEach(store.configs) { config in
                 let state = manager.state(for: config.id)
                 Button {
                     manager.syncNow(id: config.id)
                 } label: {
-                    HStack {
+                    HStack(spacing: 6) {
                         Text(config.name)
                         Spacer()
-                        if state.isRunning {
-                            Text("syncing...")
-                                .foregroundStyle(.secondary)
-                        } else if let date = config.lastSyncDate {
-                            Text(date, style: .relative)
-                                .foregroundStyle(.secondary)
-                        }
+                        Image(systemName: statusIcon(running: state.isRunning, success: config.lastSyncSuccess))
+                            .foregroundStyle(statusColor(running: state.isRunning, success: config.lastSyncSuccess).opacity(0.6))
+                            .font(.caption2)
                     }
                 }
                 .disabled(state.isRunning)
             }
 
-            Button("Sync All") {
-                for config in store.configs {
-                    let state = manager.state(for: config.id)
-                    if !state.isRunning {
-                        manager.syncNow(id: config.id)
-                    }
-                }
-            }
         }
 
         Divider()
 
         Button("Manage Syncs") {
             openWindow(id: "manage")
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
         }
 
         Button("Settings") {
             openWindow(id: "settings")
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.activate()
         }
 
         Divider()
@@ -77,5 +67,31 @@ struct MenuBarView: View {
             manager.stopAll()
             NSApp.terminate(nil)
         }.keyboardShortcut("q")
+    }
+
+    private func statusIcon(running: Bool, success: Bool?) -> String {
+        if running { return "arrow.triangle.2.circlepath" }
+        switch success {
+        case true: return "checkmark.circle.fill"
+        case false: return "xmark.circle.fill"
+        default: return "circle.dotted"
+        }
+    }
+
+    private func statusColor(running: Bool, success: Bool?) -> Color {
+        if running { return .secondary }
+        switch success {
+        case true: return .green
+        case false: return .red
+        default: return .secondary
+        }
+    }
+
+    private func statusText(running: Bool, lastSync: Date?) -> String {
+        if running { return "syncing..." }
+        guard let date = lastSync else { return "" }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: date, relativeTo: Date())
     }
 }

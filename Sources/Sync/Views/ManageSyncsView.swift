@@ -23,12 +23,12 @@ struct ManageSyncsView: View {
         .toolbar(removing: .sidebarToggle)
         .frame(minWidth: 700, minHeight: 450)
         .onAppear {
-            NSApp.setActivationPolicy(.regular)
+            WindowTracker.opened()
             if selection == nil, let first = store.configs.first {
                 selection = first.id
             }
         }
-        .onDisappear { NSApp.setActivationPolicy(.accessory) }
+        .onDisappear { WindowTracker.closed() }
         .onChange(of: selection) { _, _ in
             addingNew = false
             logInfo = nil

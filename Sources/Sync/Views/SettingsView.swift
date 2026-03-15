@@ -43,7 +43,11 @@ struct SettingsView: View {
             store.saveSettings()
             validatePath()
         }
-        .onAppear { validatePath() }
+        .onAppear {
+            WindowTracker.opened()
+            validatePath()
+        }
+        .onDisappear { WindowTracker.closed() }
     }
 
     private func validatePath() {

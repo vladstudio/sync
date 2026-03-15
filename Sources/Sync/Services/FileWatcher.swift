@@ -1,6 +1,8 @@
 import Foundation
 import CoreServices
 
+/// All access must be from the main thread: start()/stop() are called from @MainActor SyncManager,
+/// and the FSEventStream callback dispatches on DispatchQueue.main.
 final class FileWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private let path: String

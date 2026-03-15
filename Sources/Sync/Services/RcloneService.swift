@@ -75,8 +75,7 @@ struct RcloneService: Sendable {
         }
 
         if !config.extraFlags.isEmpty {
-            let extra = config.extraFlags.split(separator: " ").map(String.init)
-            args += extra
+            args += shellSplit(config.extraFlags)
         }
 
         if dryRun {
@@ -189,6 +188,29 @@ struct RcloneService: Sendable {
             return String(firstLine)
         }
         return "rclone found"
+    }
+
+    private func shellSplit(_ s: String) -> [String] {
+        var args: [String] = []
+        var current = ""
+        var inDouble = false
+        var inSingle = false
+        for ch in s {
+            if ch == "\"" && !inSingle {
+                inDouble.toggle()
+            } else if ch == "'" && !inDouble {
+                inSingle.toggle()
+            } else if ch == " " && !inDouble && !inSingle {
+                if !current.isEmpty {
+                    args.append(current)
+                    current = ""
+                }
+            } else {
+                current.append(ch)
+            }
+        }
+        if !current.isEmpty { args.append(current) }
+        return args
     }
 
     private func checkBinary() throws {

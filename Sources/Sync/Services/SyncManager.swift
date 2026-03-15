@@ -53,6 +53,7 @@ final class SyncManager: ObservableObject {
     private var timers: [UUID: Timer] = [:]
     private var watchers: [UUID: FileWatcher] = [:]
     private var runningProcesses: [UUID: Process] = [:]
+    private var notificationAuthorized: Bool?
 
     struct SyncState {
         var isRunning = false
@@ -195,14 +196,17 @@ final class SyncManager: ObservableObject {
     }
 
     private func postFailureNotification(name: String) {
-        let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert]) { granted, _ in
-            guard granted else { return }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            if notificationAuthorized == nil {
+                notificationAuthorized = (try? await center.requestAuthorization(options: [.alert])) ?? false
+            }
+            guard notificationAuthorized == true else { return }
             let content = UNMutableNotificationContent()
             content.title = "Sync Failed"
             content.body = name
             let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-            center.add(request)
+            try? await center.add(request)
         }
     }
 
