@@ -64,14 +64,16 @@ struct ManageSyncsView: View {
                     selection = config.id
                 }, onCancel: {
                     addingNew = false
+                }, onShowLog: { id in
+                    showingLogFor = id
                 })
             } else if let id = selection, let config = store.configs.first(where: { $0.id == id }) {
                 EditSyncView(store: store, manager: manager, config: config, onSave: { updated in
                     store.updateConfig(updated)
                     manager.teardownSchedule(for: updated.id)
                     manager.setupSchedule(for: updated)
-                }, onShowLog: {
-                    showingLogFor = id
+                }, onShowLog: { logId in
+                    showingLogFor = logId
                 })
                 .id(id)
             } else {

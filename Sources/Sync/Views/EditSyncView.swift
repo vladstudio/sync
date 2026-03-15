@@ -11,7 +11,7 @@ struct EditSyncView: View {
     @State private var scheduleType: Int
     @State private var intervalMinutes: Int
     @State private var excludeText: String
-    var onShowLog: (() -> Void)?
+    var onShowLog: ((UUID) -> Void)?
     @State private var scheduleResetNotice = false
     @State private var showAdvanced = false
 
@@ -19,7 +19,7 @@ struct EditSyncView: View {
     var onCancel: (() -> Void)?
     let isEditing: Bool
 
-    init(store: ConfigStore, manager: SyncManager, config: SyncConfig? = nil, onSave: @escaping (SyncConfig) -> Void, onCancel: (() -> Void)? = nil, onShowLog: (() -> Void)? = nil) {
+    init(store: ConfigStore, manager: SyncManager, config: SyncConfig? = nil, onSave: @escaping (SyncConfig) -> Void, onCancel: (() -> Void)? = nil, onShowLog: ((UUID) -> Void)? = nil) {
         self.store = store
         self.manager = manager
         self.onSave = onSave
@@ -162,7 +162,10 @@ struct EditSyncView: View {
                 TextField("Extra flags", text: $config.extraFlags)
                     .textFieldStyle(.roundedBorder)
             } header: {
-                Text("Advanced")
+                Button { showAdvanced.toggle() } label: {
+                    Text("Advanced")
+                }
+                .buttonStyle(.plain)
             }
 
         }
@@ -172,7 +175,7 @@ struct EditSyncView: View {
             ToolbarItemGroup(placement: .automatic) {
                 Button("Dry Run") {
                     manager.dryRun(config: preparedConfig())
-                    onShowLog?()
+                    onShowLog?(config.id)
                 }
 
                 if isEditing {
@@ -182,7 +185,7 @@ struct EditSyncView: View {
                     .disabled(manager.state(for: config.id).isRunning)
 
                     Button("Log") {
-                        onShowLog?()
+                        onShowLog?(config.id)
                     }
                 }
 
