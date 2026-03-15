@@ -4,10 +4,11 @@ struct ManageSyncsView: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var manager: SyncManager
     @State private var selection: UUID?
-    @State private var addingNew = false
     @State private var draftConfig = SyncConfig()
     @State private var deletingConfig: SyncConfig?
     @State private var logInfo: LogInfo?
+
+    private static let addSyncID = UUID()
 
     private struct LogInfo {
         let configId: UUID
@@ -15,13 +16,13 @@ struct ManageSyncsView: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: .constant(.all)) {
+        HStack(spacing: 0) {
             sidebar
-        } detail: {
+                .frame(width: 220)
+            Divider()
             detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .sidebarToggle)
         .frame(minWidth: 700, minHeight: 450)
         .onAppear {
             WindowTracker.opened()
@@ -30,9 +31,11 @@ struct ManageSyncsView: View {
             }
         }
         .onDisappear { WindowTracker.closed() }
-        .onChange(of: selection) { _, _ in
-            addingNew = false
+        .onChange(of: selection) { _, newValue in
             logInfo = nil
+            if newValue == Self.addSyncID {
+                draftConfig = SyncConfig()
+            }
         }
         .alert("Delete Sync?", isPresented: Binding(
             get: { deletingConfig != nil },
@@ -65,6 +68,8 @@ struct ManageSyncsView: View {
 
     private var sidebar: some View {
         List(selection: $selection) {
+            Label("Add Sync", systemImage: "plus")
+                .tag(Self.addSyncID)
             ForEach(store.configs) { config in
                 let state = manager.state(for: config.id)
                 HStack(spacing: 8) {
@@ -88,57 +93,31 @@ struct ManageSyncsView: View {
                 .tag(config.id)
             }
         }
-        .navigationSplitViewColumnWidth(220)
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button(action: {
-                    addingNew = true
-                    selection = nil
-                    draftConfig = SyncConfig()
-                    logInfo = nil
-                }) {
-                    Image(systemName: "plus")
-                }
-
-                Button(action: {
-                    if let id = selection, let config = store.configs.first(where: { $0.id == id }) {
-                        deletingConfig = config
-                    }
-                }) {
-                    Image(systemName: "minus")
-                }
-                .disabled(selection == nil || addingNew)
-            }
-        }
+        .listStyle(.sidebar)
     }
 
     @ViewBuilder
     private var detail: some View {
         if let logInfo {
             logDetail(logInfo)
-        } else if addingNew {
+        } else if selection == Self.addSyncID {
             createDetail
         } else if let id = selection, let config = store.configs.first(where: { $0.id == id }) {
             editDetail(id: id, config: config)
         } else {
-            Text("Select a sync or click + to add one")
+            Text("Select a sync or add a new one")
                 .foregroundStyle(.secondary)
-                .navigationTitle("Manage Syncs")
         }
     }
 
     // MARK: - Edit existing sync
 
     private func editDetail(id: UUID, config: SyncConfig) -> some View {
-        EditSyncView(store: store, manager: manager, config: config) { updated in
-            store.updateConfig(updated)
-            manager.teardownSchedule(for: updated.id)
-            manager.setupSchedule(for: updated)
-        }
-        .id(id)
-        .navigationTitle(config.name.isEmpty ? "Untitled" : config.name)
-        .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
+        VStack(spacing: 0) {
+            HStack {
+                Text(config.name.isEmpty ? "Untitled" : config.name)
+                    .font(.headline)
+                Spacer()
                 Button("Dry Run") {
                     manager.dryRun(config: config)
                     logInfo = LogInfo(configId: id, title: "Dry Run: \(config.name)")
@@ -151,36 +130,49 @@ struct ManageSyncsView: View {
                     logInfo = LogInfo(configId: id, title: "Log: \(config.name)")
                 }
             }
+            .padding()
+            .layoutPriority(1)
+
+            EditSyncView(store: store, manager: manager, config: config, onDelete: {
+                deletingConfig = config
+            }) { updated in
+                store.updateConfig(updated)
+                manager.teardownSchedule(for: updated.id)
+                manager.setupSchedule(for: updated)
+            }
+            .id(id)
         }
     }
 
     // MARK: - Create new sync
 
     private var createDetail: some View {
-        EditSyncView(store: store, manager: manager, config: draftConfig) { config in
-            draftConfig = config
-        }
-        .navigationTitle("Create Sync")
-        .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Create Sync")
+                    .font(.headline)
+                Spacer()
                 Button("Dry Run") {
                     manager.dryRun(config: draftConfig)
                     let name = draftConfig.name.isEmpty ? "Untitled" : draftConfig.name
                     logInfo = LogInfo(configId: draftConfig.id, title: "Dry Run: \(name)")
                 }
                 Button("Cancel") {
-                    addingNew = false
-                    draftConfig = SyncConfig()
+                    selection = store.configs.first?.id
                 }
                 Button("Save") {
                     store.addConfig(draftConfig)
                     manager.setupSchedule(for: draftConfig)
                     selection = draftConfig.id
-                    addingNew = false
-                    draftConfig = SyncConfig()
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(draftConfig.name.isEmpty || draftConfig.localPath.isEmpty || draftConfig.remote.isEmpty)
+            }
+            .padding()
+            .layoutPriority(1)
+
+            EditSyncView(store: store, manager: manager, config: draftConfig) { config in
+                draftConfig = config
             }
         }
     }
@@ -188,16 +180,21 @@ struct ManageSyncsView: View {
     // MARK: - Log / Dry Run
 
     private func logDetail(_ info: LogInfo) -> some View {
-        LogView(configId: info.configId, manager: manager)
-            .navigationTitle(info.title)
-            .toolbar {
-                ToolbarItemGroup(placement: .automatic) {
-                    if manager.state(for: info.configId).isRunning {
-                        ProgressView().controlSize(.small)
-                        Button("Cancel") { manager.cancelSync(id: info.configId) }
-                    }
-                    Button("Close") { logInfo = nil }
+        VStack(spacing: 0) {
+            HStack {
+                Text(info.title)
+                    .font(.headline)
+                Spacer()
+                if manager.state(for: info.configId).isRunning {
+                    ProgressView().controlSize(.small)
+                    Button("Cancel") { manager.cancelSync(id: info.configId) }
                 }
+                Button("Close") { logInfo = nil }
             }
+            .padding()
+            .layoutPriority(1)
+
+            LogView(configId: info.configId, manager: manager)
+        }
     }
 }

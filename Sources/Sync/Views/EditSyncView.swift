@@ -19,11 +19,13 @@ struct EditSyncView: View {
     @State private var cleaningUp = false
 
     let onSave: (SyncConfig) -> Void
+    var onDelete: (() -> Void)?
 
-    init(store: ConfigStore, manager: SyncManager, config: SyncConfig = SyncConfig(), onSave: @escaping (SyncConfig) -> Void) {
+    init(store: ConfigStore, manager: SyncManager, config: SyncConfig = SyncConfig(), onDelete: (() -> Void)? = nil, onSave: @escaping (SyncConfig) -> Void) {
         self.store = store
         self.manager = manager
         self.onSave = onSave
+        self.onDelete = onDelete
 
         _config = State(initialValue: config)
         _excludeText = State(initialValue: config.excludePatterns.joined(separator: "\n"))
@@ -187,6 +189,14 @@ struct EditSyncView: View {
                     Text("Advanced")
                 }
                 .buttonStyle(.plain)
+            }
+
+            if let onDelete {
+                Section {
+                    Button("Delete Sync", role: .destructive) {
+                        onDelete()
+                    }
+                }
             }
         }
         .formStyle(.grouped)
