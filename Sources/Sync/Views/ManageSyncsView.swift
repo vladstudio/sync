@@ -46,6 +46,14 @@ struct ManageSyncsView: View {
                 Text("Are you sure you want to delete \"\(config.name)\"?")
             }
         }
+        .alert("Error", isPresented: Binding(
+            get: { store.lastError != nil },
+            set: { if !$0 { store.lastError = nil } }
+        )) {
+            Button("OK") { store.lastError = nil }
+        } message: {
+            Text(store.lastError ?? "")
+        }
     }
 
     private var sidebar: some View {
@@ -185,8 +193,4 @@ struct ManageSyncsView: View {
                 }
             }
     }
-}
-
-extension UUID: @retroactive Identifiable {
-    public var id: UUID { self }
 }

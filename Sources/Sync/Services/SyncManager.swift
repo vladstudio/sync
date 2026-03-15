@@ -6,14 +6,16 @@ import AppKit
 private final class OutputBuffer: @unchecked Sendable {
     private let lock = NSLock()
     private var pending = ""
+    private var pendingBytes = 0
     private var lastFlush = Date.distantPast
     private let interval: TimeInterval = 0.2
     private let maxSize = 512 * 1024 // 512 KB
 
     func append(_ text: String) {
         lock.lock()
-        if pending.utf8.count < maxSize {
+        if pendingBytes < maxSize {
             pending.append(text)
+            pendingBytes += text.utf8.count
         }
         lock.unlock()
     }
@@ -27,6 +29,7 @@ private final class OutputBuffer: @unchecked Sendable {
         }
         let flushed = pending
         pending = ""
+        pendingBytes = 0
         lastFlush = now
         lock.unlock()
         handler(flushed)
@@ -36,6 +39,7 @@ private final class OutputBuffer: @unchecked Sendable {
         lock.lock()
         let flushed = pending
         pending = ""
+        pendingBytes = 0
         lock.unlock()
         return flushed
     }
@@ -82,11 +86,6 @@ final class SyncManager: ObservableObject {
         for id in ids {
             cancelSync(id: id)
         }
-    }
-
-    func refreshSchedules() {
-        stopAll()
-        startAll()
     }
 
     func setupSchedule(for config: SyncConfig) {

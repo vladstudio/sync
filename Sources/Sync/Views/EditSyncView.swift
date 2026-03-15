@@ -162,11 +162,17 @@ struct EditSyncView: View {
             }
         }
         .formStyle(.grouped)
-        .onChange(of: config) { _, _ in onSave(preparedConfig()) }
-        .onChange(of: scheduleType) { _, _ in onSave(preparedConfig()) }
-        .onChange(of: intervalMinutes) { _, _ in onSave(preparedConfig()) }
-        .onChange(of: excludeText) { _, _ in onSave(preparedConfig()) }
+        .onChange(of: saveToken) { _, _ in onSave(preparedConfig()) }
         .task { await loadRemotes() }
+    }
+
+    private var saveToken: Int {
+        var hasher = Hasher()
+        hasher.combine(config)
+        hasher.combine(scheduleType)
+        hasher.combine(intervalMinutes)
+        hasher.combine(excludeText)
+        return hasher.finalize()
     }
 
     private func preparedConfig() -> SyncConfig {
