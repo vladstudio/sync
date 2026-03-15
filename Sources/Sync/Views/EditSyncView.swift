@@ -123,7 +123,11 @@ struct EditSyncView: View {
                 }
 
                 if scheduleType == 1 {
-                    Stepper("Every \(intervalMinutes) minutes", value: $intervalMinutes, in: 1...1440)
+                    Picker("Interval", selection: $intervalMinutes) {
+                        ForEach([1, 5, 10, 15, 30, 60], id: \.self) { m in
+                            Text("Every \(m) minutes").tag(m)
+                        }
+                    }
                 }
 
                 Picker("Mode", selection: $config.mode) {
