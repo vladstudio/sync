@@ -5,13 +5,13 @@ struct EditSyncView: View {
     @ObservedObject var manager: SyncManager
 
     @State private var config: SyncConfig
-    @State private var remotes: [String] = []
+    @State private var remotes: [RcloneService.RemoteInfo] = []
     @State private var remotesLoaded = false
     @State private var remotesError: String?
     @State private var scheduleType: Int
     @State private var intervalMinutes: Int
     @State private var excludeText: String
-    @State private var showingLog = false
+    var onShowLog: (() -> Void)?
     @State private var scheduleResetNotice = false
     @State private var showAdvanced = false
 
@@ -19,11 +19,12 @@ struct EditSyncView: View {
     var onCancel: (() -> Void)?
     let isEditing: Bool
 
-    init(store: ConfigStore, manager: SyncManager, config: SyncConfig? = nil, onSave: @escaping (SyncConfig) -> Void, onCancel: (() -> Void)? = nil) {
+    init(store: ConfigStore, manager: SyncManager, config: SyncConfig? = nil, onSave: @escaping (SyncConfig) -> Void, onCancel: (() -> Void)? = nil, onShowLog: (() -> Void)? = nil) {
         self.store = store
         self.manager = manager
         self.onSave = onSave
         self.onCancel = onCancel
+        self.onShowLog = onShowLog
         self.isEditing = config != nil
 
         let c = config ?? SyncConfig()
@@ -72,8 +73,14 @@ struct EditSyncView: View {
 
                 Picker("Remote", selection: $config.remote) {
                     Text("Select...").tag("")
-                    ForEach(remotes, id: \.self) { remote in
-                        Text(remote).tag(remote)
+                    ForEach(remotes) { remote in
+                        Label(remote.name, systemImage: RemoteIcon.sfSymbol(for: remote.type))
+                            .tag(remote.name)
+                    }
+                }
+                .onChange(of: config.remote) { _, newValue in
+                    if let info = remotes.first(where: { $0.name == newValue }) {
+                        config.remoteType = info.type
                     }
                 }
 
@@ -162,7 +169,7 @@ struct EditSyncView: View {
             ToolbarItemGroup(placement: .automatic) {
                 Button("Dry Run") {
                     manager.dryRun(config: preparedConfig())
-                    showingLog = true
+                    onShowLog?()
                 }
 
                 if isEditing {
@@ -172,7 +179,7 @@ struct EditSyncView: View {
                     .disabled(manager.state(for: config.id).isRunning)
 
                     Button("Log") {
-                        showingLog = true
+                        onShowLog?()
                     }
                 }
 
@@ -194,11 +201,6 @@ struct EditSyncView: View {
         .onChange(of: intervalMinutes) { _, _ in autoSave() }
         .onChange(of: excludeText) { _, _ in autoSave() }
         .task { await loadRemotes() }
-        .overlay {
-            if showingLog {
-                LogView(configId: config.id, manager: manager, onClose: { showingLog = false })
-            }
-        }
     }
 
     private func autoSave() {

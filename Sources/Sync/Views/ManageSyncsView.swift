@@ -6,6 +6,7 @@ struct ManageSyncsView: View {
     @State private var selection: UUID?
     @State private var addingNew = false
     @State private var deletingConfig: SyncConfig?
+    @State private var showingLogFor: UUID?
 
     var body: some View {
         NavigationSplitView(columnVisibility: .constant(.all)) {
@@ -54,20 +55,22 @@ struct ManageSyncsView: View {
             }
         } detail: {
             if addingNew {
-                EditSyncView(store: store, manager: manager) { config in
+                EditSyncView(store: store, manager: manager, onSave: { config in
                     store.addConfig(config)
                     manager.setupSchedule(for: config)
                     addingNew = false
                     selection = config.id
-                } onCancel: {
+                }, onCancel: {
                     addingNew = false
-                }
+                })
             } else if let id = selection, let config = store.configs.first(where: { $0.id == id }) {
-                EditSyncView(store: store, manager: manager, config: config) { updated in
+                EditSyncView(store: store, manager: manager, config: config, onSave: { updated in
                     store.updateConfig(updated)
                     manager.teardownSchedule(for: updated.id)
                     manager.setupSchedule(for: updated)
-                }
+                }, onShowLog: {
+                    showingLogFor = id
+                })
                 .id(id)
             } else {
                 Text("Select a sync or click + to add one")
@@ -76,6 +79,11 @@ struct ManageSyncsView: View {
             }
         }
         .frame(minWidth: 700, minHeight: 450)
+        .overlay {
+            if let logId = showingLogFor {
+                LogView(configId: logId, manager: manager, onClose: { showingLogFor = nil })
+            }
+        }
         .onAppear { NSApp.setActivationPolicy(.regular) }
         .onDisappear { NSApp.setActivationPolicy(.accessory) }
         .onChange(of: selection) { _, _ in
