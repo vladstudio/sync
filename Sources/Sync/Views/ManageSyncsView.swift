@@ -15,8 +15,7 @@ struct ManageSyncsView: View {
                 ForEach(store.configs) { config in
                     let state = manager.state(for: config.id)
                     HStack(spacing: 8) {
-                        Image(systemName: RemoteIcon.sfSymbol(for: config.remoteType))
-                            .frame(width: 20)
+                        RemoteIcon.icon(for: config.remoteType)
                             .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(config.name)

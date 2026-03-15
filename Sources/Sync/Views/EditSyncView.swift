@@ -74,8 +74,11 @@ struct EditSyncView: View {
                 Picker("Remote", selection: $config.remote) {
                     Text("Select...").tag("")
                     ForEach(remotes) { remote in
-                        Label(remote.name, systemImage: RemoteIcon.sfSymbol(for: remote.type))
-                            .tag(remote.name)
+                        HStack {
+                            RemoteIcon.icon(for: remote.type, size: 14)
+                            Text(remote.name)
+                        }
+                        .tag(remote.name)
                     }
                 }
                 .onChange(of: config.remote) { _, newValue in

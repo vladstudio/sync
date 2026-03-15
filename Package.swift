@@ -7,7 +7,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Sync",
-            path: "Sources/Sync"
+            path: "Sources/Sync",
+            resources: [.copy("Resources/RemoteIcons")]
         )
     ]
 )
