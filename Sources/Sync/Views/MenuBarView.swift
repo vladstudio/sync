@@ -36,13 +36,9 @@ struct MenuBarView: View {
                 Button {
                     manager.syncNow(id: config.id)
                 } label: {
-                    HStack(spacing: 6) {
-                        Text(config.name)
-                        Spacer()
-                        Image(systemName: statusIcon(running: state.isRunning, success: config.lastSyncSuccess))
-                            .foregroundStyle(statusColor(running: state.isRunning, success: config.lastSyncSuccess).opacity(0.6))
-                            .font(.caption2)
-                    }
+                    Text(config.name + "\t") + Text(Image(systemName: statusIcon(running: state.isRunning, success: config.lastSyncSuccess)))
+                        .foregroundColor(statusColor(running: state.isRunning, success: config.lastSyncSuccess).opacity(0.6))
+                        .font(.caption2)
                 }
                 .disabled(state.isRunning)
             }
@@ -87,11 +83,4 @@ struct MenuBarView: View {
         }
     }
 
-    private func statusText(running: Bool, lastSync: Date?) -> String {
-        if running { return "syncing..." }
-        guard let date = lastSync else { return "" }
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .abbreviated
-        return f.localizedString(for: date, relativeTo: Date())
-    }
 }
