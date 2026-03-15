@@ -16,6 +16,7 @@ struct EditSyncView: View {
     @State private var showCleanupAlert = false
     @State private var showCleanupOnDemandAlert = false
     @State private var localBackupSize: String?
+    @State private var cleaningUp = false
 
     let onSave: (SyncConfig) -> Void
 
@@ -136,7 +137,13 @@ struct EditSyncView: View {
                         if !newValue { showCleanupAlert = true }
                     }
 
-                if config.keepDeletedFiles {
+                if cleaningUp {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.small)
+                        Text("Cleaning up backups…")
+                            .foregroundStyle(.secondary)
+                    }
+                } else if config.keepDeletedFiles {
                     HStack {
                         Button("Reveal Local Backups") {
                             manager.revealBackups(id: config.id)
@@ -182,19 +189,13 @@ struct EditSyncView: View {
         .onChange(of: saveToken) { _, _ in onSave(preparedConfig()) }
         .task { await loadRemotes() }
         .alert("Delete existing backups?", isPresented: $showCleanupAlert) {
-            Button("Delete", role: .destructive) {
-                manager.cleanupBackups(config: config)
-                updateBackupSize()
-            }
+            Button("Delete", role: .destructive) { runCleanup() }
             Button("Keep", role: .cancel) {}
         } message: {
             Text("Do you also want to delete existing local and remote backups for this sync?")
         }
         .alert("Clean up backups?", isPresented: $showCleanupOnDemandAlert) {
-            Button("Delete", role: .destructive) {
-                manager.cleanupBackups(config: config)
-                updateBackupSize()
-            }
+            Button("Delete", role: .destructive) { runCleanup() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This will delete all local and remote backups for this sync.")
@@ -242,6 +243,15 @@ struct EditSyncView: View {
             } catch {
                 remotesError = "Failed to open remote: \(error.localizedDescription)"
             }
+        }
+    }
+
+    private func runCleanup() {
+        cleaningUp = true
+        Task {
+            await manager.cleanupBackups(config: config)
+            cleaningUp = false
+            updateBackupSize()
         }
     }
 
