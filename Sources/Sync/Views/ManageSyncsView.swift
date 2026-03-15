@@ -20,6 +20,7 @@ struct ManageSyncsView: View {
         } detail: {
             detail
         }
+        .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
         .frame(minWidth: 700, minHeight: 450)
         .onAppear {

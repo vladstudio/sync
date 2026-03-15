@@ -40,14 +40,17 @@ struct RcloneService: Sendable {
             args = [config.mode.rawValue, remoteFull, config.localPath]
         }
 
-        args += ["--checksum", "-v", "--stats-one-line-date", "--stats", "2s"]
+        args += ["-v", "--stats-one-line-date", "--stats", "2s", "--color", "NEVER", "--retries-sleep", "10s"]
         if config.direction == .bidirectional {
-            args += ["--max-lock", "2m"]
-            if config.lastSyncSuccess != true {
+            args += ["--max-lock", "2m", "--resilient", "--recover", "--conflict-resolve", "newer"]
+            if config.lastSyncDate == nil {
                 args.append("--resync")
             }
         } else {
-            args.append("--update")
+            args += ["--update", "--check-first", "--fast-list"]
+            if config.mode == .sync {
+                args.append("--track-renames")
+            }
         }
 
         if config.keepDeletedFiles {
@@ -57,7 +60,7 @@ struct RcloneService: Sendable {
                 .appendingPathComponent(config.id.uuidString)
                 .appendingPathComponent(ts)
                 .path
-            let remoteBackupDir = "\(config.remote):.rclone-backup/\(ts)"
+            let remoteBackupDir = "\(config.remote):.rclone-backup/\(config.id.uuidString)/\(ts)"
             if config.direction == .bidirectional {
                 args += ["--backup-dir1", localBackupDir, "--backup-dir2", remoteBackupDir]
             } else if config.direction == .localToRemote {
@@ -142,12 +145,7 @@ struct RcloneService: Sendable {
             pipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
-                    let clean = str.replacingOccurrences(
-                        of: "\\x1B\\[[0-9;]*m",
-                        with: "",
-                        options: .regularExpression
-                    )
-                    onOutput(clean)
+                    onOutput(str)
                 }
             }
 

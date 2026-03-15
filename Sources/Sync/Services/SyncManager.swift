@@ -212,7 +212,7 @@ final class SyncManager: ObservableObject {
 
     func cancelSync(id: UUID) {
         if let process = runningProcesses.removeValue(forKey: id), process.isRunning {
-            process.terminate()
+            process.interrupt()
         }
         syncStates[id]?.isRunning = false
         syncStates[id]?.log.append("\n--- Cancelled ---\n")
@@ -230,7 +230,7 @@ final class SyncManager: ObservableObject {
 
         guard !config.remote.isEmpty else { return }
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
-        let remotePath = "\(config.remote):.rclone-backup"
+        let remotePath = "\(config.remote):.rclone-backup/\(config.id.uuidString)"
         try? await rclone.purge(path: remotePath)
     }
 }
