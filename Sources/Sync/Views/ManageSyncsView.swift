@@ -14,21 +14,24 @@ struct ManageSyncsView: View {
             List(selection: $selection) {
                 ForEach(store.configs) { config in
                     let state = manager.state(for: config.id)
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(config.name)
-                            Spacer()
-                            if state.isRunning {
-                                ProgressView().controlSize(.small)
-                            } else if let success = config.lastSyncSuccess {
-                                Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                    .foregroundStyle(success ? .green : .red)
-                                    .font(.caption)
-                            }
-                        }
-                        Text("\(config.direction.label) · \(config.schedule.label)")
-                            .font(.caption)
+                    HStack(spacing: 8) {
+                        Image(systemName: RemoteIcon.sfSymbol(for: config.remoteType))
+                            .frame(width: 20)
                             .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(config.name)
+                            Text("\(config.direction.label) · \(config.schedule.label)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if state.isRunning {
+                            ProgressView().controlSize(.small)
+                        } else if let success = config.lastSyncSuccess {
+                            Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(success ? .green : .red)
+                                .font(.caption)
+                        }
                     }
                     .tag(config.id)
                 }

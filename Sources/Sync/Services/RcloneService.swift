@@ -7,13 +7,24 @@ struct RcloneService: Sendable {
         self.rclonePath = rclonePath
     }
 
-    func listRemotes() async throws -> [String] {
+    struct RemoteInfo: Sendable, Identifiable {
+        var id: String { name }
+        let name: String
+        let type: String
+    }
+
+    func listRemotes() async throws -> [RemoteInfo] {
         try checkBinary()
-        let output = try await run(arguments: ["listremotes"])
+        let output = try await run(arguments: ["listremotes", "--long"])
         return output.split(separator: "\n")
-            .map { String($0).trimmingCharacters(in: .whitespaces) }
-            .map { $0.hasSuffix(":") ? String($0.dropLast()) : $0 }
-            .filter { !$0.isEmpty }
+            .compactMap { line -> RemoteInfo? in
+                let str = String(line)
+                guard let colon = str.firstIndex(of: ":") else { return nil }
+                let name = str[str.startIndex..<colon].trimmingCharacters(in: .whitespaces)
+                let type = str[str.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return nil }
+                return RemoteInfo(name: name, type: type)
+            }
     }
 
     func buildArguments(config: SyncConfig, dryRun: Bool = false) -> [String] {

@@ -45,6 +45,7 @@ struct SyncConfig: Codable, Identifiable, Sendable, Equatable {
     var name: String = ""
     var localPath: String = ""
     var remote: String = ""
+    var remoteType: String = ""
     var remotePath: String = ""
     var direction: Direction = .localToRemote
     var schedule: Schedule = .manual
