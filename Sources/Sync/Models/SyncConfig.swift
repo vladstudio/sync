@@ -40,7 +40,7 @@ enum SyncMode: String, Codable, CaseIterable, Sendable {
     }
 }
 
-struct SyncConfig: Codable, Identifiable, Sendable {
+struct SyncConfig: Codable, Identifiable, Sendable, Equatable {
     var id: UUID = UUID()
     var name: String = ""
     var localPath: String = ""

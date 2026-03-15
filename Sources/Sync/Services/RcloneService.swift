@@ -29,8 +29,12 @@ struct RcloneService: Sendable {
             args = [config.mode.rawValue, remoteFull, config.localPath]
         }
 
-        args += ["--checksum", "--progress"]
-        if config.direction != .bidirectional {
+        args += ["--checksum", "-v", "--stats-one-line-date", "--stats", "2s"]
+        if config.direction == .bidirectional {
+            if config.lastSyncSuccess != true {
+                args.append("--resync")
+            }
+        } else {
             args.append("--update")
         }
 
@@ -120,7 +124,12 @@ struct RcloneService: Sendable {
             pipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
-                    onOutput(str)
+                    let clean = str.replacingOccurrences(
+                        of: "\\x1B\\[[0-9;]*m",
+                        with: "",
+                        options: .regularExpression
+                    )
+                    onOutput(clean)
                 }
             }
 
@@ -143,6 +152,22 @@ struct RcloneService: Sendable {
         }
     }
 
+    func link(remotePath: String) async throws -> URL? {
+        try checkBinary()
+        let output = try await run(arguments: ["link", remotePath])
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return URL(string: trimmed)
+    }
+
+    func version() async throws -> String {
+        try checkBinary()
+        let output = try await run(arguments: ["version"])
+        if let firstLine = output.split(separator: "\n").first {
+            return String(firstLine)
+        }
+        return "rclone found"
+    }
+
     private func checkBinary() throws {
         guard FileManager.default.isExecutableFile(atPath: rclonePath) else {
             throw RcloneError.notInstalled(rclonePath)
@@ -163,15 +188,15 @@ struct RcloneService: Sendable {
         }
         private static func exitCodeDescription(_ code: Int) -> String {
             switch code {
-            case 1: return "general error"
-            case 2: return "not found"
-            case 3: return "permission denied"
+            case 1: return "syntax or usage error"
+            case 2: return "error not otherwise categorised"
+            case 3: return "directory not found"
             case 4: return "file not found"
             case 5: return "temporary error, retries exhausted"
-            case 6: return "fatal error"
-            case 7: return "transfer limit exceeded"
-            case 8: return "no files transferred"
-            case 9: return "filter matched no files"
+            case 6: return "some files failed to transfer"
+            case 7: return "fatal error"
+            case 8: return "transfer limit reached"
+            case 9: return "no files transferred"
             default: return "unknown error"
             }
         }

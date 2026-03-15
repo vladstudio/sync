@@ -2,6 +2,45 @@ import Foundation
 import AppKit
 @preconcurrency import UserNotifications
 
+/// Collects rapid output and flushes at most every 200ms to avoid flooding the main thread.
+private final class OutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending = ""
+    private var lastFlush = Date.distantPast
+    private let interval: TimeInterval = 0.2
+    private let maxSize = 512 * 1024 // 512 KB
+
+    func append(_ text: String) {
+        lock.lock()
+        if pending.utf8.count < maxSize {
+            pending.append(text)
+        }
+        lock.unlock()
+    }
+
+    func flushThrottled(_ handler: (String) -> Void) {
+        lock.lock()
+        let now = Date()
+        guard now.timeIntervalSince(lastFlush) >= interval, !pending.isEmpty else {
+            lock.unlock()
+            return
+        }
+        let flushed = pending
+        pending = ""
+        lastFlush = now
+        lock.unlock()
+        handler(flushed)
+    }
+
+    func drain() -> String {
+        lock.lock()
+        let flushed = pending
+        pending = ""
+        lock.unlock()
+        return flushed
+    }
+}
+
 @MainActor
 final class SyncManager: ObservableObject {
     @Published var syncStates: [UUID: SyncState] = [:]
@@ -105,6 +144,7 @@ final class SyncManager: ObservableObject {
         syncStates[id] = SyncState(isRunning: true, log: dryRun ? "=== DRY RUN ===\n" : "")
 
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
+        let buffer = OutputBuffer()
         Task {
             var success = false
             do {
@@ -117,8 +157,11 @@ final class SyncManager: ObservableObject {
                         }
                     },
                     onOutput: { [weak self] output in
-                        Task { @MainActor [weak self] in
-                            self?.syncStates[id]?.log.append(output)
+                        buffer.append(output)
+                        buffer.flushThrottled { flushed in
+                            Task { @MainActor [weak self] in
+                                self?.syncStates[id]?.log.append(flushed)
+                            }
                         }
                     }
                 )
@@ -128,7 +171,12 @@ final class SyncManager: ObservableObject {
                     self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
                 }
             }
+            // Flush any remaining buffered output
+            let remaining = buffer.drain()
             await MainActor.run {
+                if !remaining.isEmpty {
+                    self.syncStates[id]?.log.append(remaining)
+                }
                 self.finishSync(id: id, success: success, dryRun: dryRun)
             }
         }

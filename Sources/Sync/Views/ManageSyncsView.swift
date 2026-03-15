@@ -8,7 +8,8 @@ struct ManageSyncsView: View {
     @State private var deletingConfig: SyncConfig?
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: .constant(.all)) {
+
             List(selection: $selection) {
                 ForEach(store.configs) { config in
                     let state = manager.state(for: config.id)
@@ -31,6 +32,7 @@ struct ManageSyncsView: View {
                     .tag(config.id)
                 }
             }
+            .navigationSplitViewColumnWidth(220)
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button(action: {
@@ -70,9 +72,12 @@ struct ManageSyncsView: View {
             } else {
                 Text("Select a sync or click + to add one")
                     .foregroundStyle(.secondary)
+                    .navigationTitle("Manage Syncs")
             }
         }
         .frame(minWidth: 700, minHeight: 450)
+        .onAppear { NSApp.setActivationPolicy(.regular) }
+        .onDisappear { NSApp.setActivationPolicy(.accessory) }
         .onChange(of: selection) { _, _ in
             addingNew = false
         }

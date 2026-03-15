@@ -47,30 +47,13 @@ struct SettingsView: View {
     }
 
     private func validatePath() {
-        let path = store.settings.rclonePath
-        guard FileManager.default.isExecutableFile(atPath: path) else {
-            pathStatus = .invalid
-            return
-        }
+        let rclone = RcloneService(rclonePath: store.settings.rclonePath)
         Task {
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: path)
-            process.arguments = ["version"]
-            process.standardOutput = pipe
-            process.standardError = pipe
             do {
-                try process.run()
-                process.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if let output = String(data: data, encoding: .utf8),
-                   let firstLine = output.split(separator: "\n").first {
-                    await MainActor.run { pathStatus = .valid(String(firstLine)) }
-                } else {
-                    await MainActor.run { pathStatus = .valid("rclone found") }
-                }
+                let version = try await rclone.version()
+                pathStatus = .valid(version)
             } catch {
-                await MainActor.run { pathStatus = .invalid }
+                pathStatus = .invalid
             }
         }
     }

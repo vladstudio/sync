@@ -13,6 +13,7 @@ struct EditSyncView: View {
     @State private var excludeText: String
     @State private var showingLog = false
     @State private var scheduleResetNotice = false
+    @State private var showAdvanced = false
 
     let onSave: (SyncConfig) -> Void
     var onCancel: (() -> Void)?
@@ -44,12 +45,17 @@ struct EditSyncView: View {
 
     var body: some View {
         Form {
-            Section("General") {
+            Section {
                 TextField("Name", text: $config.name)
 
                 HStack {
                     TextField("Local folder", text: $config.localPath)
                     Button("Browse") { pickFolder() }
+                    if !config.localPath.isEmpty {
+                        Button("Reveal") {
+                            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: config.localPath)
+                        }
+                    }
                 }
 
                 if let error = remotesError {
@@ -71,11 +77,14 @@ struct EditSyncView: View {
                     }
                 }
 
-                TextField("Remote path", text: $config.remotePath)
-                    .textFieldStyle(.roundedBorder)
-            }
+                HStack {
+                    TextField("Remote path", text: $config.remotePath)
+                        .textFieldStyle(.roundedBorder)
+                    if !config.remote.isEmpty {
+                        Button("Open") { openRemote() }
+                    }
+                }
 
-            Section("Sync Options") {
                 Picker("Direction", selection: $config.direction) {
                     ForEach(Direction.allCases, id: \.self) { d in
                         Text(d.label).tag(d)
@@ -125,7 +134,7 @@ struct EditSyncView: View {
                 }
             }
 
-            Section("Advanced") {
+            Section(isExpanded: $showAdvanced) {
                 TextField("Bandwidth limit", text: Binding(
                     get: { config.bandwidthLimit ?? "" },
                     set: { config.bandwidthLimit = $0.isEmpty ? nil : $0 }
@@ -142,34 +151,36 @@ struct EditSyncView: View {
 
                 TextField("Extra flags", text: $config.extraFlags)
                     .textFieldStyle(.roundedBorder)
+            } header: {
+                Text("Advanced")
             }
 
-            Section {
-                HStack {
-                    Button("Dry Run") {
-                        manager.dryRun(config: preparedConfig())
+        }
+        .formStyle(.grouped)
+        .navigationTitle(isEditing ? config.name.isEmpty ? "Untitled" : config.name : "Create Sync")
+        .toolbar {
+            ToolbarItemGroup(placement: .automatic) {
+                Button("Dry Run") {
+                    manager.dryRun(config: preparedConfig())
+                    showingLog = true
+                }
+
+                if isEditing {
+                    Button("Sync Now") {
+                        manager.syncNow(id: config.id)
+                    }
+                    .disabled(manager.state(for: config.id).isRunning)
+
+                    Button("Log") {
                         showingLog = true
                     }
+                }
 
-                    if isEditing {
-                        Button("Sync Now") {
-                            let c = preparedConfig()
-                            onSave(c)
-                            manager.syncNow(id: c.id)
-                        }
-                        .disabled(manager.state(for: config.id).isRunning)
+                if let onCancel {
+                    Button("Cancel") { onCancel() }
+                }
 
-                        Button("Log") {
-                            showingLog = true
-                        }
-                    }
-
-                    Spacer()
-
-                    if let onCancel {
-                        Button("Cancel") { onCancel() }
-                    }
-
+                if !isEditing {
                     Button("Save") {
                         onSave(preparedConfig())
                     }
@@ -178,11 +189,21 @@ struct EditSyncView: View {
                 }
             }
         }
-        .formStyle(.grouped)
+        .onChange(of: config) { _, _ in autoSave() }
+        .onChange(of: scheduleType) { _, _ in autoSave() }
+        .onChange(of: intervalMinutes) { _, _ in autoSave() }
+        .onChange(of: excludeText) { _, _ in autoSave() }
         .task { await loadRemotes() }
-        .sheet(isPresented: $showingLog) {
-            LogView(configId: config.id, manager: manager)
+        .overlay {
+            if showingLog {
+                LogView(configId: config.id, manager: manager, onClose: { showingLog = false })
+            }
         }
+    }
+
+    private func autoSave() {
+        guard isEditing else { return }
+        onSave(preparedConfig())
     }
 
     private func preparedConfig() -> SyncConfig {
@@ -203,6 +224,20 @@ struct EditSyncView: View {
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
             config.localPath = url.path
+        }
+    }
+
+    private func openRemote() {
+        let remotePath = "\(config.remote):\(config.remotePath)"
+        Task {
+            let rclone = RcloneService(rclonePath: store.settings.rclonePath)
+            do {
+                if let url = try await rclone.link(remotePath: remotePath) {
+                    NSWorkspace.shared.open(url)
+                }
+            } catch {
+                remotesError = "Failed to open remote: \(error.localizedDescription)"
+            }
         }
     }
 

@@ -31,17 +31,22 @@ struct MenuBarView: View {
         } else {
             ForEach(store.configs) { config in
                 let state = manager.state(for: config.id)
-                HStack {
-                    Text(config.name)
-                    Spacer()
-                    if state.isRunning {
-                        Text("syncing...")
-                            .foregroundStyle(.secondary)
-                    } else if let date = config.lastSyncDate {
-                        Text(date, style: .relative)
-                            .foregroundStyle(.secondary)
+                Button {
+                    manager.syncNow(id: config.id)
+                } label: {
+                    HStack {
+                        Text(config.name)
+                        Spacer()
+                        if state.isRunning {
+                            Text("syncing...")
+                                .foregroundStyle(.secondary)
+                        } else if let date = config.lastSyncDate {
+                            Text(date, style: .relative)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+                .disabled(state.isRunning)
             }
 
             Button("Sync All") {

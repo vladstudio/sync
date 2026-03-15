@@ -4,6 +4,7 @@ import Foundation
 final class ConfigStore: ObservableObject {
     @Published var configs: [SyncConfig] = []
     @Published var settings: AppSettings = AppSettings()
+    @Published var lastError: String?
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -46,13 +47,23 @@ final class ConfigStore: ObservableObject {
     }
 
     func saveConfigs() {
-        guard let data = try? encoder.encode(configs) else { return }
-        try? data.write(to: configURL, options: .atomic)
+        do {
+            let data = try encoder.encode(configs)
+            try data.write(to: configURL, options: .atomic)
+            lastError = nil
+        } catch {
+            lastError = "Failed to save configs: \(error.localizedDescription)"
+        }
     }
 
     func saveSettings() {
-        guard let data = try? encoder.encode(settings) else { return }
-        try? data.write(to: settingsURL, options: .atomic)
+        do {
+            let data = try encoder.encode(settings)
+            try data.write(to: settingsURL, options: .atomic)
+            lastError = nil
+        } catch {
+            lastError = "Failed to save settings: \(error.localizedDescription)"
+        }
     }
 
     func addConfig(_ config: SyncConfig) {

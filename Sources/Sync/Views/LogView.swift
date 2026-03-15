@@ -3,7 +3,7 @@ import SwiftUI
 struct LogView: View {
     let configId: UUID
     @ObservedObject var manager: SyncManager
-    @Environment(\.dismiss) private var dismiss
+    var onClose: (() -> Void)?
 
     var body: some View {
         let state = manager.state(for: configId)
@@ -16,14 +16,14 @@ struct LogView: View {
                     ProgressView().controlSize(.small)
                     Button("Cancel") { manager.cancelSync(id: configId) }
                 }
-                Button("Close") { dismiss() }
+                Button("Close") { onClose?() }
             }
             .padding()
 
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(state.log.isEmpty ? "No output yet." : state.log)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(size: 11, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                         .padding()
@@ -35,6 +35,7 @@ struct LogView: View {
             }
             .background(Color(nsColor: .textBackgroundColor))
         }
-        .frame(minWidth: 500, minHeight: 300)
+        .background(.background)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
