@@ -42,7 +42,6 @@ struct MenuBarView: View {
                 }
                 .disabled(state.isRunning)
             }
-
         }
 
         Divider()

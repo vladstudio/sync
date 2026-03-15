@@ -142,7 +142,6 @@ final class SyncManager: ObservableObject {
         guard !(syncStates[id]?.isRunning ?? false) else { return }
 
         syncStates[id] = SyncState(isRunning: true, log: dryRun ? "=== DRY RUN ===\n" : "")
-        clearBisyncLock(for: config)
 
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
         let buffer = OutputBuffer()
@@ -217,31 +216,12 @@ final class SyncManager: ObservableObject {
         }
         syncStates[id]?.isRunning = false
         syncStates[id]?.log.append("\n--- Cancelled ---\n")
-        if let config = store.configs.first(where: { $0.id == id }) {
-            clearBisyncLock(for: config)
-        }
     }
 
     func revealBackups(id: UUID) {
         let dir = ConfigStore.backupsDir.appendingPathComponent(id.uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(dir)
-    }
-
-    private func clearBisyncLock(for config: SyncConfig) {
-        guard config.direction == .bidirectional else { return }
-        let local = encodeBisyncPath(config.localPath)
-        let remote = encodeBisyncPath("\(config.remote):\(config.remotePath)")
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        let lockFile = cacheDir.appendingPathComponent("rclone/bisync/\(local)..\(remote).lck")
-        try? FileManager.default.removeItem(at: lockFile)
-    }
-
-    private func encodeBisyncPath(_ s: String) -> String {
-        s.replacingOccurrences(of: "/", with: "_")
-         .replacingOccurrences(of: ":", with: "_")
-         .replacingOccurrences(of: "\\", with: "_")
-         .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
 
     func cleanupBackups(config: SyncConfig) async {

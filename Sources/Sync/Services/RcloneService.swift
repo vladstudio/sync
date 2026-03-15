@@ -42,6 +42,7 @@ struct RcloneService: Sendable {
 
         args += ["--checksum", "-v", "--stats-one-line-date", "--stats", "2s"]
         if config.direction == .bidirectional {
+            args += ["--max-lock", "2m"]
             if config.lastSyncSuccess != true {
                 args.append("--resync")
             }
