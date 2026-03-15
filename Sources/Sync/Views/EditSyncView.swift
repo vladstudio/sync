@@ -68,7 +68,7 @@ struct EditSyncView: View {
                     Text("Select...").tag("")
                     ForEach(remotes) { remote in
                         HStack {
-                            RemoteIcon.icon(for: remote.type, size: 14)
+                            RemoteIcon.icon(for: remote.type, size: 10)
                             Text(remote.name)
                         }
                         .tag(remote.name)

@@ -20,8 +20,14 @@ struct ManageSyncsView: View {
         } detail: {
             detail
         }
+        .toolbar(removing: .sidebarToggle)
         .frame(minWidth: 700, minHeight: 450)
-        .onAppear { NSApp.setActivationPolicy(.regular) }
+        .onAppear {
+            NSApp.setActivationPolicy(.regular)
+            if selection == nil, let first = store.configs.first {
+                selection = first.id
+            }
+        }
         .onDisappear { NSApp.setActivationPolicy(.accessory) }
         .onChange(of: selection) { _, _ in
             addingNew = false
