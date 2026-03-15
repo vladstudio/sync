@@ -224,6 +224,7 @@ final class SyncManager: ObservableObject {
         let localDir = ConfigStore.backupsDir.appendingPathComponent(config.id.uuidString)
         try? FileManager.default.removeItem(at: localDir)
 
+        guard !config.remote.isEmpty else { return }
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
         let remotePath = "\(config.remote):.rclone-backup"
         Task {

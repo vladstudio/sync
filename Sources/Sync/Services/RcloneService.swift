@@ -56,11 +56,10 @@ struct RcloneService: Sendable {
                 .appendingPathComponent(config.id.uuidString)
                 .appendingPathComponent(ts)
                 .path
+            let remoteBackupDir = "\(config.remote):.rclone-backup/\(ts)"
             if config.direction == .bidirectional {
-                let remoteBackupDir = "\(config.remote):.rclone-backup/\(ts)"
                 args += ["--backup-dir1", localBackupDir, "--backup-dir2", remoteBackupDir]
             } else if config.direction == .localToRemote {
-                let remoteBackupDir = "\(config.remote):.rclone-backup/\(ts)"
                 args += ["--backup-dir", remoteBackupDir]
             } else {
                 args += ["--backup-dir", localBackupDir]

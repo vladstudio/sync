@@ -14,6 +14,8 @@ struct EditSyncView: View {
     @State private var scheduleResetNotice = false
     @State private var showAdvanced = false
     @State private var showCleanupAlert = false
+    @State private var showCleanupOnDemandAlert = false
+    @State private var localBackupSize: String?
 
     let onSave: (SyncConfig) -> Void
 
@@ -135,9 +137,20 @@ struct EditSyncView: View {
                     }
 
                 if config.keepDeletedFiles {
-                    Button("Reveal Backups in Finder") {
-                        manager.revealBackups(id: config.id)
+                    HStack {
+                        Button("Reveal Local Backups") {
+                            manager.revealBackups(id: config.id)
+                        }
+                        Button("Clean Up Backups") {
+                            showCleanupOnDemandAlert = true
+                        }
+                        Spacer()
+                        if let size = localBackupSize {
+                            Text(size)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .onAppear { updateBackupSize() }
                 }
             }
 
@@ -171,10 +184,20 @@ struct EditSyncView: View {
         .alert("Delete existing backups?", isPresented: $showCleanupAlert) {
             Button("Delete", role: .destructive) {
                 manager.cleanupBackups(config: config)
+                updateBackupSize()
             }
             Button("Keep", role: .cancel) {}
         } message: {
             Text("Do you also want to delete existing local and remote backups for this sync?")
+        }
+        .alert("Clean up backups?", isPresented: $showCleanupOnDemandAlert) {
+            Button("Delete", role: .destructive) {
+                manager.cleanupBackups(config: config)
+                updateBackupSize()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will delete all local and remote backups for this sync.")
         }
     }
 
@@ -220,6 +243,20 @@ struct EditSyncView: View {
                 remotesError = "Failed to open remote: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func updateBackupSize() {
+        let dir = ConfigStore.backupsDir.appendingPathComponent(config.id.uuidString)
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: [.fileSizeKey]) else {
+            localBackupSize = nil
+            return
+        }
+        var total: Int64 = 0
+        for case let url as URL in enumerator {
+            total += (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { Int64($0) } ?? 0
+        }
+        localBackupSize = total > 0 ? ByteCountFormatter.string(fromByteCount: total, countStyle: .file) : nil
     }
 
     private func loadRemotes() async {
