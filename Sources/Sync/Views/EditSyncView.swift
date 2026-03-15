@@ -13,6 +13,7 @@ struct EditSyncView: View {
     @State private var excludeText: String
     @State private var scheduleResetNotice = false
     @State private var showAdvanced = false
+    @State private var showCleanupAlert = false
 
     let onSave: (SyncConfig) -> Void
 
@@ -129,6 +130,9 @@ struct EditSyncView: View {
                 }
 
                 Toggle("Back up deleted files", isOn: $config.keepDeletedFiles)
+                    .onChange(of: config.keepDeletedFiles) { _, newValue in
+                        if !newValue { showCleanupAlert = true }
+                    }
 
                 if config.keepDeletedFiles {
                     Button("Reveal Backups in Finder") {
@@ -164,6 +168,14 @@ struct EditSyncView: View {
         .formStyle(.grouped)
         .onChange(of: saveToken) { _, _ in onSave(preparedConfig()) }
         .task { await loadRemotes() }
+        .alert("Delete existing backups?", isPresented: $showCleanupAlert) {
+            Button("Delete", role: .destructive) {
+                manager.cleanupBackups(config: config)
+            }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            Text("Do you also want to delete existing local and remote backups for this sync?")
+        }
     }
 
     private var saveToken: Int {

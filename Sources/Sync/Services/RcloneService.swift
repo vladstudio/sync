@@ -52,11 +52,19 @@ struct RcloneService: Sendable {
         if config.keepDeletedFiles {
             let ts = ISO8601DateFormatter().string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
-            let backupDir = ConfigStore.backupsDir
+            let localBackupDir = ConfigStore.backupsDir
                 .appendingPathComponent(config.id.uuidString)
                 .appendingPathComponent(ts)
                 .path
-            args += ["--backup-dir", backupDir]
+            if config.direction == .bidirectional {
+                let remoteBackupDir = "\(config.remote):.rclone-backup/\(ts)"
+                args += ["--backup-dir1", localBackupDir, "--backup-dir2", remoteBackupDir]
+            } else if config.direction == .localToRemote {
+                let remoteBackupDir = "\(config.remote):.rclone-backup/\(ts)"
+                args += ["--backup-dir", remoteBackupDir]
+            } else {
+                args += ["--backup-dir", localBackupDir]
+            }
         }
 
         if let bw = config.bandwidthLimit, !bw.isEmpty {
@@ -161,6 +169,11 @@ struct RcloneService: Sendable {
                 continuation.resume(throwing: error)
             }
         }
+    }
+
+    func purge(path: String) async throws {
+        try checkBinary()
+        _ = try await run(arguments: ["purge", path])
     }
 
     func link(remotePath: String) async throws -> URL? {

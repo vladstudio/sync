@@ -219,4 +219,15 @@ final class SyncManager: ObservableObject {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(dir)
     }
+
+    func cleanupBackups(config: SyncConfig) {
+        let localDir = ConfigStore.backupsDir.appendingPathComponent(config.id.uuidString)
+        try? FileManager.default.removeItem(at: localDir)
+
+        let rclone = RcloneService(rclonePath: store.settings.rclonePath)
+        let remotePath = "\(config.remote):.rclone-backup"
+        Task {
+            try? await rclone.purge(path: remotePath)
+        }
+    }
 }
