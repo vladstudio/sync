@@ -11,27 +11,20 @@ struct EditSyncView: View {
     @State private var scheduleType: Int
     @State private var intervalMinutes: Int
     @State private var excludeText: String
-    var onShowLog: ((UUID) -> Void)?
     @State private var scheduleResetNotice = false
     @State private var showAdvanced = false
 
     let onSave: (SyncConfig) -> Void
-    var onCancel: (() -> Void)?
-    let isEditing: Bool
 
-    init(store: ConfigStore, manager: SyncManager, config: SyncConfig? = nil, onSave: @escaping (SyncConfig) -> Void, onCancel: (() -> Void)? = nil, onShowLog: ((UUID) -> Void)? = nil) {
+    init(store: ConfigStore, manager: SyncManager, config: SyncConfig = SyncConfig(), onSave: @escaping (SyncConfig) -> Void) {
         self.store = store
         self.manager = manager
         self.onSave = onSave
-        self.onCancel = onCancel
-        self.onShowLog = onShowLog
-        self.isEditing = config != nil
 
-        let c = config ?? SyncConfig()
-        _config = State(initialValue: c)
-        _excludeText = State(initialValue: c.excludePatterns.joined(separator: "\n"))
+        _config = State(initialValue: config)
+        _excludeText = State(initialValue: config.excludePatterns.joined(separator: "\n"))
 
-        switch c.schedule {
+        switch config.schedule {
         case .manual:
             _scheduleType = State(initialValue: 0)
             _intervalMinutes = State(initialValue: 15)
@@ -167,51 +160,13 @@ struct EditSyncView: View {
                 }
                 .buttonStyle(.plain)
             }
-
         }
         .formStyle(.grouped)
-        .navigationTitle(isEditing ? config.name.isEmpty ? "Untitled" : config.name : "Create Sync")
-        .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
-                Button("Dry Run") {
-                    manager.dryRun(config: preparedConfig())
-                    onShowLog?(config.id)
-                }
-
-                if isEditing {
-                    Button("Sync Now") {
-                        manager.syncNow(id: config.id)
-                    }
-                    .disabled(manager.state(for: config.id).isRunning)
-
-                    Button("Log") {
-                        onShowLog?(config.id)
-                    }
-                }
-
-                if let onCancel {
-                    Button("Cancel") { onCancel() }
-                }
-
-                if !isEditing {
-                    Button("Save") {
-                        onSave(preparedConfig())
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(config.name.isEmpty || config.localPath.isEmpty || config.remote.isEmpty)
-                }
-            }
-        }
-        .onChange(of: config) { _, _ in autoSave() }
-        .onChange(of: scheduleType) { _, _ in autoSave() }
-        .onChange(of: intervalMinutes) { _, _ in autoSave() }
-        .onChange(of: excludeText) { _, _ in autoSave() }
+        .onChange(of: config) { _, _ in onSave(preparedConfig()) }
+        .onChange(of: scheduleType) { _, _ in onSave(preparedConfig()) }
+        .onChange(of: intervalMinutes) { _, _ in onSave(preparedConfig()) }
+        .onChange(of: excludeText) { _, _ in onSave(preparedConfig()) }
         .task { await loadRemotes() }
-    }
-
-    private func autoSave() {
-        guard isEditing else { return }
-        onSave(preparedConfig())
     }
 
     private func preparedConfig() -> SyncConfig {
