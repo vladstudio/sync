@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var store: ConfigStore
     @State private var pathStatus: PathStatus = .unknown
+    @State private var validationTask: Task<Void, Never>?
 
     private enum PathStatus {
         case unknown, valid(String), invalid
@@ -47,18 +48,31 @@ struct SettingsView: View {
             WindowTracker.opened()
             validatePath()
         }
-        .onDisappear { WindowTracker.closed() }
+        .onDisappear {
+            validationTask?.cancel()
+            WindowTracker.closed()
+        }
     }
 
     private func validatePath() {
-        let rclone = RcloneService(rclonePath: store.settings.rclonePath)
-        Task {
+        let path = store.settings.rclonePath
+        validationTask?.cancel()
+        pathStatus = .unknown
+        validationTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+
+            let rclone = RcloneService(rclonePath: path)
+            let nextStatus: PathStatus
             do {
                 let version = try await rclone.version()
-                pathStatus = .valid(version)
+                nextStatus = .valid(version)
             } catch {
-                pathStatus = .invalid
+                nextStatus = .invalid
             }
+
+            guard !Task.isCancelled, path == store.settings.rclonePath else { return }
+            pathStatus = nextStatus
         }
     }
 }

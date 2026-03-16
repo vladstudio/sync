@@ -7,27 +7,53 @@ struct RcloneService: Sendable {
         self.rclonePath = rclonePath
     }
 
-    struct RemoteInfo: Sendable, Identifiable {
+    struct RemoteInfo: Sendable, Identifiable, Equatable {
         var id: String { name }
         let name: String
         let type: String
     }
 
+    enum ArgumentParsingError: Error, LocalizedError, Equatable {
+        case danglingEscape
+        case unterminatedSingleQuote
+        case unterminatedDoubleQuote
+
+        var errorDescription: String? {
+            switch self {
+            case .danglingEscape:
+                "Extra flags end with an incomplete escape sequence."
+            case .unterminatedSingleQuote:
+                "Extra flags contain an unterminated single-quoted string."
+            case .unterminatedDoubleQuote:
+                "Extra flags contain an unterminated double-quoted string."
+            }
+        }
+    }
+
+    private enum QuoteState {
+        case single
+        case double
+    }
+
     func listRemotes() async throws -> [RemoteInfo] {
         try checkBinary()
         let output = try await run(arguments: ["listremotes", "--long"])
-        return output.split(separator: "\n")
+        return Self.parseRemotesOutput(output)
+    }
+
+    static func parseRemotesOutput(_ output: String) -> [RemoteInfo] {
+        output.split(separator: "\n")
             .compactMap { line -> RemoteInfo? in
                 let str = String(line)
                 guard let colon = str.firstIndex(of: ":") else { return nil }
                 let name = str[str.startIndex..<colon].trimmingCharacters(in: .whitespaces)
                 let type = str[str.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return nil }
+                guard !name.isEmpty, !type.isEmpty else { return nil }
                 return RemoteInfo(name: name, type: type)
             }
     }
 
-    func buildArguments(config: SyncConfig, dryRun: Bool = false) -> [String] {
+    func buildArguments(config: SyncConfig, dryRun: Bool = false) throws -> [String] {
         let remoteFull = "\(config.remote):\(config.remotePath)"
         var args: [String] = []
 
@@ -79,7 +105,7 @@ struct RcloneService: Sendable {
         }
 
         if !config.extraFlags.isEmpty {
-            args += shellSplit(config.extraFlags)
+            args += try splitCommandLine(config.extraFlags)
         }
 
         if dryRun {
@@ -98,7 +124,7 @@ struct RcloneService: Sendable {
         onOutput: @Sendable @escaping (String) -> Void
     ) async throws {
         try checkBinary()
-        let arguments = buildArguments(config: config, dryRun: dryRun)
+        let arguments = try buildArguments(config: config, dryRun: dryRun)
         try await runStreaming(arguments: arguments, onProcess: onProcess, onOutput: onOutput)
     }
 
@@ -151,6 +177,10 @@ struct RcloneService: Sendable {
 
             process.terminationHandler = { p in
                 pipe.fileHandleForReading.readabilityHandler = nil
+                let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
+                if !remaining.isEmpty, let str = String(data: remaining, encoding: .utf8) {
+                    onOutput(str)
+                }
                 if p.terminationStatus != 0 {
                     continuation.resume(throwing: RcloneError.exitCode(Int(p.terminationStatus)))
                 } else {
@@ -189,26 +219,78 @@ struct RcloneService: Sendable {
         return "rclone found"
     }
 
-    private func shellSplit(_ s: String) -> [String] {
+    private func splitCommandLine(_ s: String) throws -> [String] {
         var args: [String] = []
         var current = ""
-        var inDouble = false
-        var inSingle = false
+        var quoteState: QuoteState?
+        var isEscaping = false
+        var tokenStarted = false
+
+        func finishToken() {
+            guard tokenStarted || !current.isEmpty else { return }
+            args.append(current)
+            current = ""
+            tokenStarted = false
+        }
+
         for ch in s {
-            if ch == "\"" && !inSingle {
-                inDouble.toggle()
-            } else if ch == "'" && !inDouble {
-                inSingle.toggle()
-            } else if ch == " " && !inDouble && !inSingle {
-                if !current.isEmpty {
-                    args.append(current)
-                    current = ""
-                }
-            } else {
+            if isEscaping {
                 current.append(ch)
+                isEscaping = false
+                tokenStarted = true
+                continue
+            }
+
+            switch ch {
+            case "\\":
+                if quoteState == .single {
+                    current.append(ch)
+                } else {
+                    isEscaping = true
+                }
+                tokenStarted = true
+            case "\"":
+                if quoteState == .single {
+                    current.append(ch)
+                } else if quoteState == .double {
+                    quoteState = nil
+                } else {
+                    quoteState = .double
+                }
+                tokenStarted = true
+            case "'":
+                if quoteState == .double {
+                    current.append(ch)
+                } else if quoteState == .single {
+                    quoteState = nil
+                } else {
+                    quoteState = .single
+                }
+                tokenStarted = true
+            default:
+                if ch.isWhitespace && quoteState == nil {
+                    finishToken()
+                    continue
+                }
+                current.append(ch)
+                tokenStarted = true
             }
         }
-        if !current.isEmpty { args.append(current) }
+
+        if isEscaping {
+            throw ArgumentParsingError.danglingEscape
+        }
+
+        switch quoteState {
+        case .single?:
+            throw ArgumentParsingError.unterminatedSingleQuote
+        case .double?:
+            throw ArgumentParsingError.unterminatedDoubleQuote
+        case nil:
+            break
+        }
+
+        finishToken()
         return args
     }
 

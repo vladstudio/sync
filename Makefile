@@ -15,6 +15,10 @@ package: build
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/MenuBarIcon.png $(APP_BUNDLE)/Contents/Resources/
 	cp "Resources/MenuBarIcon@2x.png" $(APP_BUNDLE)/Contents/Resources/
+	for bundle in $(BUILD_DIR)/release/*.bundle; do \
+		[ -e "$$bundle" ] || continue; \
+		cp -R "$$bundle" $(APP_BUNDLE)/Contents/Resources/; \
+	done
 
 install: package
 	cp -r $(APP_BUNDLE) /Applications/

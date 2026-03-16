@@ -31,8 +31,8 @@ struct ManageSyncsView: View {
         .background(WindowConfigurator(configure: configureWindow))
         .onAppear {
             WindowTracker.opened()
-            if selection == nil, let first = store.configs.first {
-                selection = first.id
+            if selection == nil {
+                selection = store.configs.first?.id ?? Self.addSyncID
             }
         }
         .onDisappear { WindowTracker.closed() }
@@ -77,46 +77,12 @@ struct ManageSyncsView: View {
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                Button {
-                    logInfo = nil
-                    selection = Self.addSyncID
-                } label: {
-                    Label("Add Sync", systemImage: "plus")
-                        .labelStyle(.titleAndIcon)
-                        .foregroundStyle(selection == Self.addSyncID ? Color.accentColor : .primary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 30)
-            .padding(.bottom, 12)
-            .frame(maxWidth: .infinity, alignment: .bottomLeading)
-            .frame(height: headerHeight, alignment: .bottomLeading)
-
+            sidebarHeader
             List(selection: $selection) {
+                addSyncRow
+
                 ForEach(store.configs) { config in
-                    let state = manager.state(for: config.id)
-                    HStack(spacing: 8) {
-                        RemoteIcon.icon(for: config.remoteType)
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(config.name)
-                            Text("\(config.direction.label) · \(config.schedule.label)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if state.isRunning {
-                            ProgressView().controlSize(.small)
-                        } else if let success = config.lastSyncSuccess {
-                            Image(systemName: success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                                .foregroundStyle(success ? .green : .orange)
-                                .font(.caption)
-                                .help(success ? "Last sync succeeded" : "Last sync failed")
-                        }
-                    }
-                    .tag(config.id)
+                    syncRow(config)
                 }
             }
             .listStyle(.sidebar)
@@ -124,6 +90,61 @@ struct ManageSyncsView: View {
         .frame(width: sidebarWidth)
         .frame(maxHeight: .infinity)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var sidebarHeader: some View {
+        HStack {
+            Spacer()
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 28, height: 28)
+            Spacer()
+        }
+        .padding(.top, 12)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: headerHeight, alignment: .bottom)
+        .background(.background)
+    }
+
+    private var addSyncRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "plus.circle.fill")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add Sync")
+                Text("Create a new sync configuration")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .tag(Self.addSyncID)
+    }
+
+    private func syncRow(_ config: SyncConfig) -> some View {
+        let state = manager.state(for: config.id)
+        return HStack(spacing: 8) {
+            RemoteIcon.icon(for: config.remoteType)
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(config.name)
+                Text("\(config.direction.label) · \(config.schedule.label)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if state.isRunning {
+                ProgressView().controlSize(.small)
+            } else if let success = config.lastSyncSuccess {
+                Image(systemName: success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundStyle(success ? .green : .orange)
+                    .font(.caption)
+                    .help(success ? "Last sync succeeded" : "Last sync failed")
+            }
+        }
+        .tag(config.id)
     }
 
     // MARK: - Detail
@@ -180,7 +201,7 @@ struct ManageSyncsView: View {
                     logInfo = LogInfo(configId: draftConfig.id, title: "Dry Run: \(name)")
                 }
                 Button("Cancel") {
-                    selection = store.configs.first?.id
+                    selection = store.configs.first?.id ?? Self.addSyncID
                 }
                 Button("Save") {
                     store.addConfig(draftConfig)

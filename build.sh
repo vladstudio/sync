@@ -12,7 +12,10 @@ cp .build/release/Sync "$APP/Contents/MacOS/"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/"
 cp Resources/MenuBarIcon.png "$APP/Contents/Resources/"
 cp "Resources/MenuBarIcon@2x.png" "$APP/Contents/Resources/"
-cp -R .build/release/Sync_Sync.bundle "$APP/Contents/Resources/" 2>/dev/null || true
+for bundle in .build/release/*.bundle; do
+  [ -e "$bundle" ] || continue
+  cp -R "$bundle" "$APP/Contents/Resources/"
+done
 
 pkill -x Sync 2>/dev/null || true
 rm -rf /Applications/Sync.app
