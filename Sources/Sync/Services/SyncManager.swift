@@ -53,11 +53,18 @@ final class SyncManager: ObservableObject {
     private var timers: [UUID: Timer] = [:]
     private var watchers: [UUID: FileWatcher] = [:]
     private var runningProcesses: [UUID: Process] = [:]
+    private var cancelledSyncs: Set<UUID> = []
     private var notificationAuthorized: Bool?
 
     struct SyncState {
         var isRunning = false
         var log = ""
+    }
+
+    private enum SyncOutcome {
+        case success
+        case failure
+        case cancelled
     }
 
     private var schedulesStarted = false
@@ -141,12 +148,13 @@ final class SyncManager: ObservableObject {
         let id = config.id
         guard !(syncStates[id]?.isRunning ?? false) else { return }
 
+        cancelledSyncs.remove(id)
         syncStates[id] = SyncState(isRunning: true, log: dryRun ? "=== DRY RUN ===\n" : "")
 
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
         let buffer = OutputBuffer()
         Task {
-            var success = false
+            var outcome: SyncOutcome = .failure
             do {
                 try await rclone.sync(
                     config: config,
@@ -165,10 +173,17 @@ final class SyncManager: ObservableObject {
                         }
                     }
                 )
-                success = true
+                outcome = .success
             } catch {
-                await MainActor.run {
-                    self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
+                let wasCancelled = await MainActor.run {
+                    self.cancelledSyncs.contains(id)
+                }
+                if wasCancelled {
+                    outcome = .cancelled
+                } else {
+                    await MainActor.run {
+                        self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
+                    }
                 }
             }
             // Flush any remaining buffered output
@@ -177,20 +192,23 @@ final class SyncManager: ObservableObject {
                 if !remaining.isEmpty {
                     self.syncStates[id]?.log.append(remaining)
                 }
-                self.finishSync(id: id, success: success, dryRun: dryRun)
+                self.finishSync(id: id, outcome: outcome, dryRun: dryRun)
             }
         }
     }
 
-    private func finishSync(id: UUID, success: Bool, dryRun: Bool) {
+    private func finishSync(id: UUID, outcome: SyncOutcome, dryRun: Bool) {
         runningProcesses.removeValue(forKey: id)
         syncStates[id]?.isRunning = false
+        defer { cancelledSyncs.remove(id) }
         guard !dryRun, let i = store.configs.firstIndex(where: { $0.id == id }) else { return }
+        guard outcome != .cancelled else { return }
+
         store.configs[i].lastSyncDate = Date()
-        store.configs[i].lastSyncSuccess = success
+        store.configs[i].lastSyncSuccess = (outcome == .success)
         store.saveConfigs()
 
-        if !success {
+        if outcome == .failure {
             postFailureNotification(name: store.configs[i].name)
         }
     }
@@ -211,11 +229,14 @@ final class SyncManager: ObservableObject {
     }
 
     func cancelSync(id: UUID) {
+        cancelledSyncs.insert(id)
         if let process = runningProcesses.removeValue(forKey: id), process.isRunning {
             process.interrupt()
         }
+        if syncStates[id]?.isRunning == true {
+            syncStates[id]?.log.append("\n--- Cancelled ---\n")
+        }
         syncStates[id]?.isRunning = false
-        syncStates[id]?.log.append("\n--- Cancelled ---\n")
     }
 
     func revealBackups(id: UUID) {
@@ -224,13 +245,41 @@ final class SyncManager: ObservableObject {
         NSWorkspace.shared.open(dir)
     }
 
-    func cleanupBackups(config: SyncConfig) async {
+    func cleanupBackups(config: SyncConfig) async throws {
         let localDir = ConfigStore.backupsDir.appendingPathComponent(config.id.uuidString)
-        try? FileManager.default.removeItem(at: localDir)
+        var errors: [String] = []
 
-        guard !config.remote.isEmpty else { return }
-        let rclone = RcloneService(rclonePath: store.settings.rclonePath)
-        let remotePath = "\(config.remote):.rclone-backup/\(config.id.uuidString)"
-        try? await rclone.purge(path: remotePath)
+        if FileManager.default.fileExists(atPath: localDir.path) {
+            do {
+                try FileManager.default.removeItem(at: localDir)
+            } catch {
+                errors.append("Failed to delete local backups: \(error.localizedDescription)")
+            }
+        }
+
+        if !config.remote.isEmpty {
+            let rclone = RcloneService(rclonePath: store.settings.rclonePath)
+            let remotePath = "\(config.remote):.rclone-backup/\(config.id.uuidString)"
+            do {
+                try await rclone.purge(path: remotePath)
+            } catch {
+                errors.append("Failed to delete remote backups: \(error.localizedDescription)")
+            }
+        }
+
+        if !errors.isEmpty {
+            throw CleanupError.failed(errors)
+        }
+    }
+
+    enum CleanupError: LocalizedError {
+        case failed([String])
+
+        var errorDescription: String? {
+            switch self {
+            case .failed(let errors):
+                errors.joined(separator: "\n")
+            }
+        }
     }
 }

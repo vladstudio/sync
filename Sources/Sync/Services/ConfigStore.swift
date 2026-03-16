@@ -36,14 +36,27 @@ final class ConfigStore: ObservableObject {
     private var settingsURL: URL { Self.appSupportDir.appendingPathComponent("settings.json") }
 
     func load() {
-        if let data = try? Data(contentsOf: configURL),
-           let configs = try? decoder.decode([SyncConfig].self, from: data) {
-            self.configs = configs
+        var loadErrors: [String] = []
+
+        if FileManager.default.fileExists(atPath: configURL.path) {
+            do {
+                let data = try Data(contentsOf: configURL)
+                configs = try decoder.decode([SyncConfig].self, from: data)
+            } catch {
+                loadErrors.append("Failed to load configs: \(error.localizedDescription)")
+            }
         }
-        if let data = try? Data(contentsOf: settingsURL),
-           let settings = try? decoder.decode(AppSettings.self, from: data) {
-            self.settings = settings
+
+        if FileManager.default.fileExists(atPath: settingsURL.path) {
+            do {
+                let data = try Data(contentsOf: settingsURL)
+                settings = try decoder.decode(AppSettings.self, from: data)
+            } catch {
+                loadErrors.append("Failed to load settings: \(error.localizedDescription)")
+            }
         }
+
+        lastError = loadErrors.isEmpty ? nil : loadErrors.joined(separator: "\n")
     }
 
     func saveConfigs() {

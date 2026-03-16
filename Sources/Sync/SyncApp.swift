@@ -26,22 +26,23 @@ struct SyncApp: App {
     init() {
         let s = ConfigStore()
         s.load()
+        let m = SyncManager(store: s)
+        m.startAllOnce()
         _store = StateObject(wrappedValue: s)
-        _manager = StateObject(wrappedValue: SyncManager(store: s))
+        _manager = StateObject(wrappedValue: m)
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuBarView(store: store, manager: manager)
-                .onAppear { manager.startAllOnce() }
         } label: {
             Image(systemName: "arrow.up.arrow.down")
         }
 
         Window("Manage Syncs", id: "manage") {
             ManageSyncsView(store: store, manager: manager)
-                .frame(minWidth: 600, minHeight: 400)
         }
+        .windowStyle(.hiddenTitleBar)
 
         Window("Settings", id: "settings") {
             SettingsView(store: store)

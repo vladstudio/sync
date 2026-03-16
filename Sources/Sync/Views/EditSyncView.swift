@@ -18,13 +18,13 @@ struct EditSyncView: View {
     @State private var localBackupSize: String?
     @State private var cleaningUp = false
 
-    let onSave: (SyncConfig) -> Void
+    let onChange: (SyncConfig) -> Void
     var onDelete: (() -> Void)?
 
-    init(store: ConfigStore, manager: SyncManager, config: SyncConfig = SyncConfig(), onDelete: (() -> Void)? = nil, onSave: @escaping (SyncConfig) -> Void) {
+    init(store: ConfigStore, manager: SyncManager, config: SyncConfig = SyncConfig(), onDelete: (() -> Void)? = nil, onChange: @escaping (SyncConfig) -> Void) {
         self.store = store
         self.manager = manager
-        self.onSave = onSave
+        self.onChange = onChange
         self.onDelete = onDelete
 
         _config = State(initialValue: config)
@@ -200,7 +200,7 @@ struct EditSyncView: View {
             }
         }
         .formStyle(.grouped)
-        .onChange(of: preparedConfig()) { _, new in onSave(new) }
+        .onChange(of: preparedConfig()) { _, new in onChange(new) }
         .task { await loadRemotes() }
         .alert("Delete existing backups?", isPresented: $showCleanupAlert) {
             Button("Delete", role: .destructive) { runCleanup() }
@@ -254,9 +254,17 @@ struct EditSyncView: View {
     private func runCleanup() {
         cleaningUp = true
         Task {
-            await manager.cleanupBackups(config: config)
-            cleaningUp = false
-            updateBackupSize()
+            do {
+                try await manager.cleanupBackups(config: config)
+            } catch {
+                await MainActor.run {
+                    store.lastError = error.localizedDescription
+                }
+            }
+            await MainActor.run {
+                cleaningUp = false
+                updateBackupSize()
+            }
         }
     }
 

@@ -5,6 +5,8 @@ struct ManageSyncsView: View {
     @ObservedObject var manager: SyncManager
     @State private var selection: UUID?
     @State private var draftConfig = SyncConfig()
+    @State private var editDrafts: [UUID: SyncConfig] = [:]
+    @State private var editResetTokens: [UUID: Int] = [:]
     @State private var deletingConfig: SyncConfig?
     @State private var logInfo: LogInfo?
 
@@ -47,6 +49,8 @@ struct ManageSyncsView: View {
                     manager.cancelSync(id: config.id)
                     manager.teardownSchedule(for: config.id)
                     if selection == config.id { selection = nil }
+                    editDrafts.removeValue(forKey: config.id)
+                    editResetTokens.removeValue(forKey: config.id)
                     store.deleteConfig(id: config.id)
                 }
                 deletingConfig = nil
@@ -65,6 +69,8 @@ struct ManageSyncsView: View {
             Text(store.lastError ?? "")
         }
     }
+
+    // MARK: - Sidebar
 
     private var sidebar: some View {
         List(selection: $selection) {
@@ -85,9 +91,10 @@ struct ManageSyncsView: View {
                     if state.isRunning {
                         ProgressView().controlSize(.small)
                     } else if let success = config.lastSyncSuccess {
-                        Image(systemName: success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(success ? .green : .red)
+                        Image(systemName: success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                            .foregroundStyle(success ? .green : .orange)
                             .font(.caption)
+                            .help(success ? "Last sync succeeded" : "Last sync failed")
                     }
                 }
                 .tag(config.id)
@@ -95,6 +102,8 @@ struct ManageSyncsView: View {
         }
         .listStyle(.sidebar)
     }
+
+    // MARK: - Detail
 
     @ViewBuilder
     private var detail: some View {
@@ -110,91 +119,118 @@ struct ManageSyncsView: View {
         }
     }
 
-    // MARK: - Edit existing sync
-
     private func editDetail(id: UUID, config: SyncConfig) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(config.name.isEmpty ? "Untitled" : config.name)
-                    .font(.headline)
-                Spacer()
-                Button("Dry Run") {
-                    manager.dryRun(config: config)
-                    logInfo = LogInfo(configId: id, title: "Dry Run: \(config.name)")
-                }
-                Button("Sync Now") {
-                    manager.syncNow(id: id)
-                }
-                .disabled(manager.state(for: id).isRunning)
-                Button("Log") {
-                    logInfo = LogInfo(configId: id, title: "Log: \(config.name)")
-                }
-            }
-            .padding()
-            .layoutPriority(1)
+        let draft = editDrafts[id] ?? config
+        let hasChanges = draft != config
 
-            EditSyncView(store: store, manager: manager, config: config, onDelete: {
-                deletingConfig = config
-            }) { updated in
-                store.updateConfig(updated)
-                manager.teardownSchedule(for: updated.id)
-                manager.setupSchedule(for: updated)
+        return EditSyncView(store: store, manager: manager, config: draft, onDelete: {
+            deletingConfig = config
+        }) { updated in
+            editDrafts[id] = updated
+        }
+        .id("\(id.uuidString)-\(editResetTokens[id, default: 0])")
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                HStack {
+                    Text(draft.name.isEmpty ? "Untitled" : draft.name)
+                        .font(.headline)
+                    Spacer()
+                    Button("Dry Run") {
+                        manager.dryRun(config: draft)
+                        logInfo = LogInfo(configId: id, title: "Dry Run: \(draft.name)")
+                    }
+                    Button("Sync Now") {
+                        manager.syncNow(id: id)
+                    }
+                    .disabled(manager.state(for: id).isRunning)
+                    Button("Log") {
+                        logInfo = LogInfo(configId: id, title: "Log: \(draft.name)")
+                    }
+                    Button("Revert") {
+                        editDrafts.removeValue(forKey: id)
+                        editResetTokens[id, default: 0] += 1
+                    }
+                    .disabled(!hasChanges)
+                    Button("Save") {
+                        store.updateConfig(draft)
+                        if scheduleInputChanged(from: config, to: draft) {
+                            manager.teardownSchedule(for: id)
+                            manager.setupSchedule(for: draft)
+                        }
+                        editDrafts.removeValue(forKey: id)
+                        editResetTokens[id, default: 0] += 1
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!hasChanges || !isConfigValid(draft))
+                }
+                .padding()
+                Divider()
             }
-            .id(id)
+            .background(.background)
         }
     }
-
-    // MARK: - Create new sync
 
     private var createDetail: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Create Sync")
-                    .font(.headline)
-                Spacer()
-                Button("Dry Run") {
-                    manager.dryRun(config: draftConfig)
-                    let name = draftConfig.name.isEmpty ? "Untitled" : draftConfig.name
-                    logInfo = LogInfo(configId: draftConfig.id, title: "Dry Run: \(name)")
+        EditSyncView(store: store, manager: manager, config: draftConfig) { config in
+            draftConfig = config
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Create Sync")
+                        .font(.headline)
+                    Spacer()
+                    Button("Dry Run") {
+                        manager.dryRun(config: draftConfig)
+                        let name = draftConfig.name.isEmpty ? "Untitled" : draftConfig.name
+                        logInfo = LogInfo(configId: draftConfig.id, title: "Dry Run: \(name)")
+                    }
+                    Button("Cancel") {
+                        selection = store.configs.first?.id
+                    }
+                    Button("Save") {
+                        store.addConfig(draftConfig)
+                        manager.setupSchedule(for: draftConfig)
+                        selection = draftConfig.id
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!isConfigValid(draftConfig))
                 }
-                Button("Cancel") {
-                    selection = store.configs.first?.id
-                }
-                Button("Save") {
-                    store.addConfig(draftConfig)
-                    manager.setupSchedule(for: draftConfig)
-                    selection = draftConfig.id
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(draftConfig.name.isEmpty || draftConfig.localPath.isEmpty || draftConfig.remote.isEmpty)
+                .padding()
+                Divider()
             }
-            .padding()
-            .layoutPriority(1)
-
-            EditSyncView(store: store, manager: manager, config: draftConfig) { config in
-                draftConfig = config
-            }
+            .background(.background)
         }
     }
 
-    // MARK: - Log / Dry Run
-
     private func logDetail(_ info: LogInfo) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(info.title)
-                    .font(.headline)
-                Spacer()
-                if manager.state(for: info.configId).isRunning {
-                    ProgressView().controlSize(.small)
-                    Button("Cancel") { manager.cancelSync(id: info.configId) }
+        LogView(configId: info.configId, manager: manager)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(info.title)
+                            .font(.headline)
+                        Spacer()
+                        if manager.state(for: info.configId).isRunning {
+                            ProgressView().controlSize(.small)
+                            Button("Cancel") { manager.cancelSync(id: info.configId) }
+                        }
+                        Button("Close") { logInfo = nil }
+                    }
+                    .padding()
+                    Divider()
                 }
-                Button("Close") { logInfo = nil }
+                .background(.background)
             }
-            .padding()
-            .layoutPriority(1)
+    }
 
-            LogView(configId: info.configId, manager: manager)
-        }
+    private func isConfigValid(_ config: SyncConfig) -> Bool {
+        !config.name.isEmpty && !config.localPath.isEmpty && !config.remote.isEmpty
+    }
+
+    private func scheduleInputChanged(from old: SyncConfig, to new: SyncConfig) -> Bool {
+        old.schedule != new.schedule ||
+        old.direction != new.direction ||
+        old.localPath != new.localPath
     }
 }
