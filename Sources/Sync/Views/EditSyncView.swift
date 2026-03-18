@@ -132,9 +132,11 @@ struct EditSyncView: View {
                     }
                 }
 
-                Picker("Mode", selection: $config.mode) {
-                    ForEach(SyncMode.allCases, id: \.self) { m in
-                        Text(m.label).tag(m)
+                if config.direction != .bidirectional {
+                    Picker("Mode", selection: $config.mode) {
+                        ForEach(SyncMode.allCases, id: \.self) { m in
+                            Text(m.label).tag(m)
+                        }
                     }
                 }
 

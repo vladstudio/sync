@@ -106,6 +106,7 @@ final class SyncManager: ObservableObject {
         case .manual:
             break
         case .interval(let minutes):
+            syncNow(id: config.id)
             let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: true) { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.syncNow(id: config.id)
@@ -144,51 +145,23 @@ final class SyncManager: ObservableObject {
         runSync(config: config, dryRun: true)
     }
 
+    private var syncGeneration: [UUID: Int] = [:]
+
     private func runSync(config: SyncConfig, dryRun: Bool) {
         let id = config.id
         guard !(syncStates[id]?.isRunning ?? false) else { return }
 
         cancelledSyncs.remove(id)
+        let gen = (syncGeneration[id] ?? 0) + 1
+        syncGeneration[id] = gen
         syncStates[id] = SyncState(isRunning: true, log: dryRun ? "=== DRY RUN ===\n" : "")
 
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
-        let buffer = OutputBuffer()
         Task {
-            var outcome: SyncOutcome = .failure
-            do {
-                try await rclone.sync(
-                    config: config,
-                    dryRun: dryRun,
-                    onProcess: { [weak self] process in
-                        Task { @MainActor [weak self] in
-                            self?.runningProcesses[id] = process
-                        }
-                    },
-                    onOutput: { [weak self] output in
-                        buffer.append(output)
-                        buffer.flushThrottled { flushed in
-                            Task { @MainActor [weak self] in
-                                self?.syncStates[id]?.log.append(flushed)
-                            }
-                        }
-                    }
-                )
-                outcome = .success
-            } catch {
-                let wasCancelled = await MainActor.run {
-                    self.cancelledSyncs.contains(id)
-                }
-                if wasCancelled {
-                    outcome = .cancelled
-                } else {
-                    await MainActor.run {
-                        self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
-                    }
-                }
-            }
-            // Flush any remaining buffered output
-            let remaining = buffer.drain()
+            let (outcome, remaining) = await self.executeSync(id: id, config: config, dryRun: dryRun, rclone: rclone)
             await MainActor.run {
+                // Skip if a newer sync has started for this id (cancel + re-sync race)
+                guard self.syncGeneration[id] == gen else { return }
                 if !remaining.isEmpty {
                     self.syncStates[id]?.log.append(remaining)
                 }
@@ -197,18 +170,82 @@ final class SyncManager: ObservableObject {
         }
     }
 
+    private func executeSync(
+        id: UUID, config: SyncConfig, dryRun: Bool, rclone: RcloneService, retried: Bool = false
+    ) async -> (SyncOutcome, String) {
+        let buffer = OutputBuffer()
+        var outcome: SyncOutcome = .failure
+        do {
+            try await rclone.sync(
+                config: config,
+                dryRun: dryRun,
+                onProcess: { [weak self] process in
+                    Task { @MainActor [weak self] in
+                        self?.runningProcesses[id] = process
+                    }
+                },
+                onOutput: { [weak self] output in
+                    buffer.append(output)
+                    buffer.flushThrottled { flushed in
+                        Task { @MainActor [weak self] in
+                            self?.syncStates[id]?.log.append(flushed)
+                        }
+                    }
+                }
+            )
+            outcome = .success
+        } catch {
+            let wasCancelled = await MainActor.run { self.cancelledSyncs.contains(id) }
+            if wasCancelled {
+                outcome = .cancelled
+            } else {
+                let log = buffer.drain()
+                // Retry once after removing a stale bisync lock file
+                if !retried, let lockPath = Self.parseLockPath(from: log) {
+                    try? FileManager.default.removeItem(atPath: lockPath)
+                    await MainActor.run {
+                        self.syncStates[id]?.log.append(log)
+                        self.syncStates[id]?.log.append("\n--- Removed stale lock file, retrying ---\n\n")
+                    }
+                    return await executeSync(id: id, config: config, dryRun: dryRun, rclone: rclone, retried: true)
+                }
+                await MainActor.run {
+                    self.syncStates[id]?.log.append(log)
+                    self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
+                }
+            }
+        }
+        return (outcome, buffer.drain())
+    }
+
+    private static func parseLockPath(from log: String) -> String? {
+        guard log.contains("prior lock file found:") else { return nil }
+        // Match the .lck file path from rclone output
+        guard let range = log.range(of: #"/.+\.lck"#, options: .regularExpression) else { return nil }
+        // Trim any trailing whitespace/newline that regex might capture
+        return log[range].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func finishSync(id: UUID, outcome: SyncOutcome, dryRun: Bool) {
         runningProcesses.removeValue(forKey: id)
         syncStates[id]?.isRunning = false
         defer { cancelledSyncs.remove(id) }
-        guard !dryRun, let i = store.configs.firstIndex(where: { $0.id == id }) else { return }
+        guard let i = store.configs.firstIndex(where: { $0.id == id }) else { return }
         guard outcome != .cancelled else { return }
 
-        store.configs[i].lastSyncDate = Date()
-        store.configs[i].lastSyncSuccess = (outcome == .success)
+        if dryRun {
+            if outcome == .success { store.configs[i].lastSyncSuccess = true }
+        } else {
+            // For bidirectional, only set lastSyncDate on success — a nil lastSyncDate
+            // triggers --resync which is required to establish the baseline listing files.
+            if outcome == .success || store.configs[i].direction != .bidirectional {
+                store.configs[i].lastSyncDate = Date()
+            }
+            store.configs[i].lastSyncSuccess = (outcome == .success)
+        }
         store.saveConfigs()
 
-        if outcome == .failure {
+        if !dryRun, outcome == .failure {
             postFailureNotification(name: store.configs[i].name)
         }
     }

@@ -200,6 +200,7 @@ struct ManageSyncsView: View {
                     let name = draftConfig.name.isEmpty ? "Untitled" : draftConfig.name
                     logInfo = LogInfo(configId: draftConfig.id, title: "Dry Run: \(name)")
                 }
+                .disabled(!isConfigValid(draftConfig))
                 Button("Cancel") {
                     selection = store.configs.first?.id ?? Self.addSyncID
                 }
@@ -223,6 +224,7 @@ struct ManageSyncsView: View {
                     manager.dryRun(config: draft)
                     logInfo = LogInfo(configId: id, title: "Dry Run: \(draft.name)")
                 }
+                .disabled(!isConfigValid(draft))
                 Button("Sync Now") {
                     manager.syncNow(id: id)
                 }
