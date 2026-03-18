@@ -219,11 +219,12 @@ final class SyncManager: ObservableObject {
     }
 
     private static func parseLockPath(from log: String) -> String? {
-        guard log.contains("prior lock file found:") else { return nil }
-        // Match the .lck file path from rclone output
-        guard let range = log.range(of: #"/.+\.lck"#, options: .regularExpression) else { return nil }
-        // Trim any trailing whitespace/newline that regex might capture
-        return log[range].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let marker = log.range(of: "prior lock file found: ") else { return nil }
+        let rest = log[marker.upperBound...]
+        let path = String(rest.prefix(while: { !$0.isNewline }))
+            .trimmingCharacters(in: .whitespaces)
+        guard path.hasSuffix(".lck") else { return nil }
+        return path
     }
 
     private func finishSync(id: UUID, outcome: SyncOutcome, dryRun: Bool) {
