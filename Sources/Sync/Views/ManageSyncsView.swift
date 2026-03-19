@@ -249,7 +249,7 @@ struct ManageSyncsView: View {
                         manager.syncNow(id: id)
                     }
                     .disabled(manager.state(for: id).isRunning)
-                    Button("Sync Now with --force") {
+                    Button("Retry with --force") {
                         manager.syncNow(id: id, force: true)
                     }
                     .disabled(manager.state(for: id).isRunning)
