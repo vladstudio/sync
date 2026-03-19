@@ -10,10 +10,40 @@ enum WindowTracker {
     }
 
     static func closed() {
-        count -= 1
-        if count <= 0 {
-            count = 0
+        count = max(0, count - 1)
+        if count == 0 {
             NSApp.setActivationPolicy(.accessory)
+        }
+    }
+}
+
+private struct MenuBarLabel: View {
+    @ObservedObject var manager: SyncManager
+    @ObservedObject var store: ConfigStore
+
+    private static let icons: [String: NSImage] = {
+        let size = NSSize(width: 18, height: 18)
+        var result: [String: NSImage] = [:]
+        for name in ["SyncIdle", "SyncActive", "SyncProblem"] {
+            guard let path = Bundle.main.path(forResource: "\(name)@2x", ofType: "png"),
+                  let img = NSImage(contentsOfFile: path) else { continue }
+            img.size = size
+            img.isTemplate = true
+            result[name] = img
+        }
+        return result
+    }()
+
+    var body: some View {
+        let icon: NSImage? = if manager.syncStates.values.contains(where: \.isRunning) {
+            Self.icons["SyncActive"]
+        } else if store.configs.contains(where: { $0.lastSyncSuccess == false }) {
+            Self.icons["SyncProblem"]
+        } else {
+            Self.icons["SyncIdle"]
+        }
+        if let icon {
+            Image(nsImage: icon)
         }
     }
 }
@@ -36,7 +66,7 @@ struct SyncApp: App {
         MenuBarExtra {
             MenuBarView(store: store, manager: manager)
         } label: {
-            Image(systemName: "arrow.up.arrow.down")
+            MenuBarLabel(manager: manager, store: store)
         }
 
         Window("Manage Syncs", id: "manage") {

@@ -26,7 +26,7 @@ struct ManageSyncsView: View {
         }
         .frame(minWidth: 700, minHeight: 450)
         .ignoresSafeArea(.container, edges: .top)
-        .background(WindowConfigurator(configure: configureWindow))
+        .background(WindowConfigurator(configure: ManageSyncsView.configureWindow))
         .onAppear {
             WindowTracker.opened()
             if selection == nil {
@@ -265,7 +265,7 @@ struct ManageSyncsView: View {
             .background(.background)
     }
 
-    private func configureWindow(_ window: NSWindow) {
+    private static func configureWindow(_ window: NSWindow) {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbar = nil

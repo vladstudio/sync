@@ -51,15 +51,15 @@ struct SyncConfig: Codable, Identifiable, Sendable, Equatable, Hashable {
     var schedule: Schedule = .manual
     var mode: SyncMode = .copy
     var keepDeletedFiles: Bool = true
-    var bandwidthLimit: String? = nil
+    var bandwidthLimit: String?
     var excludePatterns: [String] = [".DS_Store"]
     var useChecksum: Bool = false
     var ignoreExisting: Bool = false
-    var transfers: Int? = nil
-    var checkers: Int? = nil
+    var transfers: Int?
+    var checkers: Int?
     var extraFlags: String = ""
-    var lastSyncDate: Date? = nil
-    var lastSyncSuccess: Bool? = nil
+    var lastSyncDate: Date?
+    var lastSyncSuccess: Bool?
 
     init() {}
 

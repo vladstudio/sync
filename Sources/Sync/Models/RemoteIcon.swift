@@ -14,18 +14,18 @@ enum RemoteIcon {
     private static var cache: [String: NSImage] = [:]
 
     /// Returns a SwiftUI view for the given rclone remote type.
-    @ViewBuilder
     static func icon(for type: String, size: CGFloat = 16) -> some View {
+        image(for: type)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+    }
+
+    private static func image(for type: String) -> Image {
         if brandTypes.contains(type), let nsImage = loadSVG(for: type) {
             Image(nsImage: nsImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: size, height: size)
         } else {
             Image(systemName: sfSymbol(for: type))
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: size, height: size)
         }
     }
 

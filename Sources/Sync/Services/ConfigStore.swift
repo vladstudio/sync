@@ -4,7 +4,19 @@ import Foundation
 final class ConfigStore: ObservableObject {
     @Published var configs: [SyncConfig] = []
     @Published var settings: AppSettings = AppSettings()
-    @Published var lastError: String?
+    @Published var configError: String?
+    @Published var settingsError: String?
+
+    var lastError: String? {
+        get {
+            let parts = [configError, settingsError].compactMap { $0 }
+            return parts.isEmpty ? nil : parts.joined(separator: "\n")
+        }
+        set {
+            configError = newValue
+            settingsError = nil
+        }
+    }
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -36,14 +48,13 @@ final class ConfigStore: ObservableObject {
     private var settingsURL: URL { Self.appSupportDir.appendingPathComponent("settings.json") }
 
     func load() {
-        var loadErrors: [String] = []
-
         if FileManager.default.fileExists(atPath: configURL.path) {
             do {
                 let data = try Data(contentsOf: configURL)
                 configs = try decoder.decode([SyncConfig].self, from: data)
+                configError = nil
             } catch {
-                loadErrors.append("Failed to load configs: \(error.localizedDescription)")
+                configError = "Failed to load configs: \(error.localizedDescription)"
             }
         }
 
@@ -51,21 +62,20 @@ final class ConfigStore: ObservableObject {
             do {
                 let data = try Data(contentsOf: settingsURL)
                 settings = try decoder.decode(AppSettings.self, from: data)
+                settingsError = nil
             } catch {
-                loadErrors.append("Failed to load settings: \(error.localizedDescription)")
+                settingsError = "Failed to load settings: \(error.localizedDescription)"
             }
         }
-
-        lastError = loadErrors.isEmpty ? nil : loadErrors.joined(separator: "\n")
     }
 
     func saveConfigs() {
         do {
             let data = try encoder.encode(configs)
             try data.write(to: configURL, options: .atomic)
-            lastError = nil
+            configError = nil
         } catch {
-            lastError = "Failed to save configs: \(error.localizedDescription)"
+            configError = "Failed to save configs: \(error.localizedDescription)"
         }
     }
 
@@ -73,9 +83,9 @@ final class ConfigStore: ObservableObject {
         do {
             let data = try encoder.encode(settings)
             try data.write(to: settingsURL, options: .atomic)
-            lastError = nil
+            settingsError = nil
         } catch {
-            lastError = "Failed to save settings: \(error.localizedDescription)"
+            settingsError = "Failed to save settings: \(error.localizedDescription)"
         }
     }
 

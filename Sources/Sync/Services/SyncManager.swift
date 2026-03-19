@@ -203,16 +203,12 @@ final class SyncManager: ObservableObject {
                 // Retry once after removing a stale bisync lock file
                 if !retried, let lockPath = Self.parseLockPath(from: log) {
                     try? FileManager.default.removeItem(atPath: lockPath)
-                    await MainActor.run {
-                        self.syncStates[id]?.log.append(log)
-                        self.syncStates[id]?.log.append("\n--- Removed stale lock file, retrying ---\n\n")
-                    }
+                    self.syncStates[id]?.log.append(log)
+                    self.syncStates[id]?.log.append("\n--- Removed stale lock file, retrying ---\n\n")
                     return await executeSync(id: id, config: config, dryRun: dryRun, rclone: rclone, retried: true)
                 }
-                await MainActor.run {
-                    self.syncStates[id]?.log.append(log)
-                    self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
-                }
+                self.syncStates[id]?.log.append(log)
+                self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
             }
         }
         return (outcome, buffer.drain())
@@ -234,16 +230,14 @@ final class SyncManager: ObservableObject {
         guard let i = store.configs.firstIndex(where: { $0.id == id }) else { return }
         guard outcome != .cancelled else { return }
 
-        if dryRun {
-            if outcome == .success { store.configs[i].lastSyncSuccess = true }
-        } else {
-            // For bidirectional, only set lastSyncDate on success — a nil lastSyncDate
-            // triggers --resync which is required to establish the baseline listing files.
-            if outcome == .success || store.configs[i].direction != .bidirectional {
-                store.configs[i].lastSyncDate = Date()
-            }
-            store.configs[i].lastSyncSuccess = (outcome == .success)
+        guard !dryRun else { return }
+
+        // For bidirectional, only set lastSyncDate on success — a nil lastSyncDate
+        // triggers --resync which is required to establish the baseline listing files.
+        if outcome == .success || store.configs[i].direction != .bidirectional {
+            store.configs[i].lastSyncDate = Date()
         }
+        store.configs[i].lastSyncSuccess = (outcome == .success)
         store.saveConfigs()
 
         if !dryRun, outcome == .failure {

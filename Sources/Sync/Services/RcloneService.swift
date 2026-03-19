@@ -1,5 +1,11 @@
 import Foundation
 
+private final class DataAccumulator: @unchecked Sendable {
+    private var data = Data()
+    func append(_ chunk: Data) { data.append(chunk) }
+    var result: Data { data }
+}
+
 struct RcloneService: Sendable {
     let rclonePath: String
 
@@ -157,9 +163,19 @@ struct RcloneService: Sendable {
             process.standardOutput = pipe
             process.standardError = pipe
 
+            let collected = DataAccumulator()
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if !data.isEmpty {
+                    collected.append(data)
+                }
+            }
+
             process.terminationHandler = { p in
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(data: data, encoding: .utf8) ?? ""
+                pipe.fileHandleForReading.readabilityHandler = nil
+                let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
+                if !remaining.isEmpty { collected.append(remaining) }
+                let output = String(data: collected.result, encoding: .utf8) ?? ""
                 if p.terminationStatus != 0 {
                     continuation.resume(throwing: RcloneError.failed(output))
                 } else {
@@ -170,6 +186,7 @@ struct RcloneService: Sendable {
             do {
                 try process.run()
             } catch {
+                pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(throwing: error)
             }
         }
