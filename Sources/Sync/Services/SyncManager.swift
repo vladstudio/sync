@@ -134,6 +134,10 @@ final class SyncManager: ObservableObject {
         watchers.removeValue(forKey: id)
     }
 
+    func cleanupState(for id: UUID) {
+        syncStates.removeValue(forKey: id)
+    }
+
     func state(for id: UUID) -> SyncState {
         syncStates[id] ?? SyncState()
     }
@@ -141,6 +145,12 @@ final class SyncManager: ObservableObject {
     func syncNow(id: UUID, scheduled: Bool = false, force: Bool = false) {
         guard let config = store.configs.first(where: { $0.id == id }) else { return }
         if scheduled && config.lastSyncSuccess == false { return }
+        if !scheduled, let i = store.configs.firstIndex(where: { $0.id == id }),
+           store.configs[i].lastSyncError != nil {
+            store.configs[i].lastSyncSuccess = nil
+            store.configs[i].lastSyncError = nil
+            store.saveConfigs()
+        }
         runSync(config: config, dryRun: false, force: force)
     }
 

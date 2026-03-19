@@ -59,6 +59,7 @@ struct ManageSyncsView: View {
                 if let config = deletingConfig {
                     manager.cancelSync(id: config.id)
                     manager.teardownSchedule(for: config.id)
+                    manager.cleanupState(for: config.id)
                     manager.deletePersistedLog(id: config.id)
                     if selection == config.id { selection = nil }
                     store.deleteConfig(id: config.id)
@@ -171,7 +172,7 @@ struct ManageSyncsView: View {
         }) { updated in
             var updated = updated
             let previous = store.configs.first(where: { $0.id == updated.id })
-            if previous?.lastSyncSuccess == false {
+            if previous?.lastSyncSuccess == false && !manager.state(for: updated.id).isRunning {
                 updated.lastSyncSuccess = nil
                 updated.lastSyncError = nil
             }
