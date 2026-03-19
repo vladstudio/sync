@@ -1,6 +1,12 @@
 import SwiftUI
 
 struct EditSyncView: View {
+    private enum ScheduleType: Int {
+        case manual = 0
+        case interval = 1
+        case onLocalChange = 2
+    }
+
     @ObservedObject var store: ConfigStore
     @ObservedObject var manager: SyncManager
 
@@ -8,7 +14,7 @@ struct EditSyncView: View {
     @State private var remotes: [RcloneService.RemoteInfo] = []
     @State private var remotesLoaded = false
     @State private var remotesError: String?
-    @State private var scheduleType: Int
+    @State private var scheduleType: ScheduleType
     @State private var intervalMinutes: Int
     @State private var excludeText: String
     @State private var scheduleResetNotice = false
@@ -32,13 +38,13 @@ struct EditSyncView: View {
 
         switch config.schedule {
         case .manual:
-            _scheduleType = State(initialValue: 0)
+            _scheduleType = State(initialValue: .manual)
             _intervalMinutes = State(initialValue: 15)
         case .interval(let m):
-            _scheduleType = State(initialValue: 1)
+            _scheduleType = State(initialValue: .interval)
             _intervalMinutes = State(initialValue: m)
         case .onLocalChange:
-            _scheduleType = State(initialValue: 2)
+            _scheduleType = State(initialValue: .onLocalChange)
             _intervalMinutes = State(initialValue: 15)
         }
     }
@@ -113,8 +119,8 @@ struct EditSyncView: View {
                     }
                 }
                 .onChange(of: config.direction) { _, newValue in
-                    if newValue == .remoteToLocal && scheduleType == 2 {
-                        scheduleType = 0
+                    if newValue == .remoteToLocal && scheduleType == .onLocalChange {
+                        scheduleType = .manual
                         scheduleResetNotice = true
                         Task {
                             try? await Task.sleep(for: .seconds(4))
@@ -124,10 +130,10 @@ struct EditSyncView: View {
                 }
 
                 Picker("Schedule", selection: $scheduleType) {
-                    Text("Manual").tag(0)
-                    Text("Interval").tag(1)
+                    Text("Manual").tag(ScheduleType.manual)
+                    Text("Interval").tag(ScheduleType.interval)
                     if config.direction != .remoteToLocal {
-                        Text("On local change").tag(2)
+                        Text("On local change").tag(ScheduleType.onLocalChange)
                     }
                 }
 
@@ -137,7 +143,7 @@ struct EditSyncView: View {
                         .foregroundStyle(.orange)
                 }
 
-                if scheduleType == 1 {
+                if scheduleType == .interval {
                     Picker("Interval", selection: $intervalMinutes) {
                         ForEach([1, 5, 10, 15, 30, 60], id: \.self) { m in
                             Text("Every \(m) minutes").tag(m)
@@ -265,9 +271,9 @@ struct EditSyncView: View {
     private func preparedConfig() -> SyncConfig {
         var c = config
         switch scheduleType {
-        case 1: c.schedule = .interval(minutes: intervalMinutes)
-        case 2: c.schedule = .onLocalChange
-        default: c.schedule = .manual
+        case .interval: c.schedule = .interval(minutes: intervalMinutes)
+        case .onLocalChange: c.schedule = .onLocalChange
+        case .manual: c.schedule = .manual
         }
         c.excludePatterns = excludeText.split(separator: "\n").map(String.init)
         return c
@@ -284,7 +290,7 @@ struct EditSyncView: View {
     }
 
     private func openRemote() {
-        let remotePath = "\(config.remote):\(config.remotePath)"
+        let remotePath = config.remoteFull
         Task {
             let rclone = RcloneService(rclonePath: store.settings.rclonePath)
             do {
@@ -304,7 +310,7 @@ struct EditSyncView: View {
                 try await manager.cleanupBackups(config: config)
             } catch {
                 await MainActor.run {
-                    store.lastError = error.localizedDescription
+                    store.setError(error.localizedDescription)
                 }
             }
             await MainActor.run {
@@ -315,17 +321,23 @@ struct EditSyncView: View {
     }
 
     private func updateBackupSize() {
-        let dir = ConfigStore.backupsDir.appendingPathComponent(config.id.uuidString)
+        let dir = ConfigStore.backupDir(for: config.id)
+        Task.detached {
+            let result = Self.computeBackupSize(dir: dir)
+            await MainActor.run { localBackupSize = result }
+        }
+    }
+
+    private nonisolated static func computeBackupSize(dir: URL) -> String? {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: [.fileSizeKey]) else {
-            localBackupSize = nil
-            return
+            return nil
         }
         var total: Int64 = 0
         for case let url as URL in enumerator {
             total += (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { Int64($0) } ?? 0
         }
-        localBackupSize = total > 0 ? ByteCountFormatter.string(fromByteCount: total, countStyle: .file) : nil
+        return total > 0 ? ByteCountFormatter.string(fromByteCount: total, countStyle: .file) : nil
     }
 
     private func loadRemotes() async {

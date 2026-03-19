@@ -1,12 +1,14 @@
 import Foundation
 
 private final class DataAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
     private var data = Data()
-    func append(_ chunk: Data) { data.append(chunk) }
-    var result: Data { data }
+    func append(_ chunk: Data) { lock.lock(); data.append(chunk); lock.unlock() }
+    var result: Data { lock.lock(); defer { lock.unlock() }; return data }
 }
 
 struct RcloneService: Sendable {
+    private nonisolated(unsafe) static let isoFormatter = ISO8601DateFormatter()
     let rclonePath: String
 
     init(rclonePath: String = "/opt/homebrew/bin/rclone") {
@@ -60,7 +62,7 @@ struct RcloneService: Sendable {
     }
 
     func buildArguments(config: SyncConfig, dryRun: Bool = false, force: Bool = false) throws -> [String] {
-        let remoteFull = "\(config.remote):\(config.remotePath)"
+        let remoteFull = config.remoteFull
         var args: [String] = []
 
         switch config.direction {
@@ -89,13 +91,12 @@ struct RcloneService: Sendable {
         }
 
         if config.keepDeletedFiles {
-            let ts = ISO8601DateFormatter().string(from: Date())
+            let ts = Self.isoFormatter.string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
-            let localBackupDir = ConfigStore.backupsDir
-                .appendingPathComponent(config.id.uuidString)
+            let localBackupDir = ConfigStore.backupDir(for: config.id)
                 .appendingPathComponent(ts)
                 .path
-            let remoteBackupDir = "\(config.remote):.rclone-backup/\(config.id.uuidString)/\(ts)"
+            let remoteBackupDir = "\(config.remoteBackupPath)/\(ts)"
             if config.direction == .bidirectional {
                 args += ["--backup-dir1", localBackupDir, "--backup-dir2", remoteBackupDir]
             } else if config.direction == .localToRemote {
@@ -159,47 +160,38 @@ struct RcloneService: Sendable {
     }
 
     private func run(arguments: [String]) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            let pipe = Pipe()
-            process.executableURL = URL(fileURLWithPath: rclonePath)
-            process.arguments = arguments
-            process.standardOutput = pipe
-            process.standardError = pipe
-
-            let collected = DataAccumulator()
-            pipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty {
-                    collected.append(data)
-                }
-            }
-
-            process.terminationHandler = { p in
-                pipe.fileHandleForReading.readabilityHandler = nil
-                let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
-                if !remaining.isEmpty { collected.append(remaining) }
-                let output = String(data: collected.result, encoding: .utf8) ?? ""
-                if p.terminationStatus != 0 {
-                    continuation.resume(throwing: RcloneError.failed(output))
-                } else {
-                    continuation.resume(returning: output)
-                }
-            }
-
-            do {
-                try process.run()
-            } catch {
-                pipe.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(throwing: error)
-            }
+        let collected = DataAccumulator()
+        do {
+            try await runProcess(
+                arguments: arguments,
+                onOutput: { collected.append($0) },
+                onProcess: nil
+            )
+        } catch is RcloneError {
+            let output = String(data: collected.result, encoding: .utf8) ?? ""
+            throw RcloneError.failed(output)
         }
+        return String(data: collected.result, encoding: .utf8) ?? ""
     }
 
     private func runStreaming(
         arguments: [String],
         onProcess: @Sendable @escaping (Process) -> Void,
         onOutput: @Sendable @escaping (String) -> Void
+    ) async throws {
+        try await runProcess(
+            arguments: arguments,
+            onOutput: { data in
+                if let str = String(data: data, encoding: .utf8) { onOutput(str) }
+            },
+            onProcess: onProcess
+        )
+    }
+
+    private func runProcess(
+        arguments: [String],
+        onOutput: @Sendable @escaping (Data) -> Void,
+        onProcess: (@Sendable (Process) -> Void)?
     ) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             let process = Process()
@@ -211,17 +203,13 @@ struct RcloneService: Sendable {
 
             pipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
-                if !data.isEmpty, let str = String(data: data, encoding: .utf8) {
-                    onOutput(str)
-                }
+                if !data.isEmpty { onOutput(data) }
             }
 
             process.terminationHandler = { p in
                 pipe.fileHandleForReading.readabilityHandler = nil
                 let remaining = pipe.fileHandleForReading.readDataToEndOfFile()
-                if !remaining.isEmpty, let str = String(data: remaining, encoding: .utf8) {
-                    onOutput(str)
-                }
+                if !remaining.isEmpty { onOutput(remaining) }
                 if p.terminationStatus != 0 {
                     continuation.resume(throwing: RcloneError.exitCode(Int(p.terminationStatus)))
                 } else {
@@ -231,7 +219,7 @@ struct RcloneService: Sendable {
 
             do {
                 try process.run()
-                onProcess(process)
+                onProcess?(process)
             } catch {
                 pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(throwing: error)

@@ -73,9 +73,9 @@ struct ManageSyncsView: View {
         }
         .alert("Error", isPresented: Binding(
             get: { store.lastError != nil },
-            set: { if !$0 { store.lastError = nil } }
+            set: { if !$0 { store.clearErrors() } }
         )) {
-            Button("OK") { store.lastError = nil }
+            Button("OK") { store.clearErrors() }
         } message: {
             Text(store.lastError ?? "")
         }
@@ -145,11 +145,11 @@ struct ManageSyncsView: View {
             Spacer()
             if state.isRunning {
                 ProgressView().controlSize(.small)
-            } else if let success = config.lastSyncSuccess {
-                Image(systemName: success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                    .foregroundStyle(success ? .green : .orange)
+            } else if config.lastSyncSuccess != nil {
+                Image(systemName: SyncStatusDisplay.icon(running: false, success: config.lastSyncSuccess))
+                    .foregroundStyle(SyncStatusDisplay.color(running: false, success: config.lastSyncSuccess))
                     .font(.caption)
-                    .help(success ? "Last sync succeeded" : "Last sync failed")
+                    .help(config.lastSyncSuccess == true ? "Last sync succeeded" : "Last sync failed")
             }
         }
         .tag(config.id)

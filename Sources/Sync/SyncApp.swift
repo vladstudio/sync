@@ -21,28 +21,34 @@ private struct MenuBarLabel: View {
     @ObservedObject var manager: SyncManager
     @ObservedObject var store: ConfigStore
 
-    private static let icons: [String: NSImage] = {
+    private enum IconState: String, CaseIterable {
+        case idle = "SyncIdle"
+        case active = "SyncActive"
+        case problem = "SyncProblem"
+    }
+
+    private static let icons: [IconState: NSImage] = {
         let size = NSSize(width: 18, height: 18)
-        var result: [String: NSImage] = [:]
-        for name in ["SyncIdle", "SyncActive", "SyncProblem"] {
-            guard let path = Bundle.main.path(forResource: "\(name)@2x", ofType: "png"),
+        var result: [IconState: NSImage] = [:]
+        for state in IconState.allCases {
+            guard let path = Bundle.main.path(forResource: "\(state.rawValue)@2x", ofType: "png"),
                   let img = NSImage(contentsOfFile: path) else { continue }
             img.size = size
             img.isTemplate = true
-            result[name] = img
+            result[state] = img
         }
         return result
     }()
 
     var body: some View {
-        let icon: NSImage? = if manager.syncStates.values.contains(where: \.isRunning) {
-            Self.icons["SyncActive"]
+        let state: IconState = if manager.syncStates.values.contains(where: \.isRunning) {
+            .active
         } else if store.configs.contains(where: { $0.lastSyncSuccess == false }) {
-            Self.icons["SyncProblem"]
+            .problem
         } else {
-            Self.icons["SyncIdle"]
+            .idle
         }
-        if let icon {
+        if let icon = Self.icons[state] {
             Image(nsImage: icon)
         }
     }

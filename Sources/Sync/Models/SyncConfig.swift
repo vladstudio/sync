@@ -62,29 +62,33 @@ struct SyncConfig: Codable, Identifiable, Sendable, Equatable, Hashable {
     var lastSyncSuccess: Bool?
     var lastSyncError: String?
 
+    var remoteFull: String { "\(remote):\(remotePath)" }
+    var remoteBackupPath: String { "\(remote):.rclone-backup/\(id.uuidString)" }
+
     init() {}
 
     init(from decoder: Decoder) throws {
+        let d = SyncConfig()
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
-        localPath = try c.decodeIfPresent(String.self, forKey: .localPath) ?? ""
-        remote = try c.decodeIfPresent(String.self, forKey: .remote) ?? ""
-        remoteType = try c.decodeIfPresent(String.self, forKey: .remoteType) ?? ""
-        remotePath = try c.decodeIfPresent(String.self, forKey: .remotePath) ?? ""
-        direction = try c.decodeIfPresent(Direction.self, forKey: .direction) ?? .localToRemote
-        schedule = try c.decodeIfPresent(Schedule.self, forKey: .schedule) ?? .manual
-        mode = try c.decodeIfPresent(SyncMode.self, forKey: .mode) ?? .copy
-        keepDeletedFiles = try c.decodeIfPresent(Bool.self, forKey: .keepDeletedFiles) ?? true
-        bandwidthLimit = try c.decodeIfPresent(String.self, forKey: .bandwidthLimit)
-        excludePatterns = try c.decodeIfPresent([String].self, forKey: .excludePatterns) ?? [".DS_Store"]
-        useChecksum = try c.decodeIfPresent(Bool.self, forKey: .useChecksum) ?? false
-        ignoreExisting = try c.decodeIfPresent(Bool.self, forKey: .ignoreExisting) ?? false
-        transfers = try c.decodeIfPresent(Int.self, forKey: .transfers)
-        checkers = try c.decodeIfPresent(Int.self, forKey: .checkers)
-        extraFlags = try c.decodeIfPresent(String.self, forKey: .extraFlags) ?? ""
-        lastSyncDate = try c.decodeIfPresent(Date.self, forKey: .lastSyncDate)
-        lastSyncSuccess = try c.decodeIfPresent(Bool.self, forKey: .lastSyncSuccess)
-        lastSyncError = try c.decodeIfPresent(String.self, forKey: .lastSyncError)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? d.id
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? d.name
+        localPath = try c.decodeIfPresent(String.self, forKey: .localPath) ?? d.localPath
+        remote = try c.decodeIfPresent(String.self, forKey: .remote) ?? d.remote
+        remoteType = try c.decodeIfPresent(String.self, forKey: .remoteType) ?? d.remoteType
+        remotePath = try c.decodeIfPresent(String.self, forKey: .remotePath) ?? d.remotePath
+        direction = try c.decodeIfPresent(Direction.self, forKey: .direction) ?? d.direction
+        schedule = try c.decodeIfPresent(Schedule.self, forKey: .schedule) ?? d.schedule
+        mode = try c.decodeIfPresent(SyncMode.self, forKey: .mode) ?? d.mode
+        keepDeletedFiles = try c.decodeIfPresent(Bool.self, forKey: .keepDeletedFiles) ?? d.keepDeletedFiles
+        bandwidthLimit = try c.decodeIfPresent(String.self, forKey: .bandwidthLimit) ?? d.bandwidthLimit
+        excludePatterns = try c.decodeIfPresent([String].self, forKey: .excludePatterns) ?? d.excludePatterns
+        useChecksum = try c.decodeIfPresent(Bool.self, forKey: .useChecksum) ?? d.useChecksum
+        ignoreExisting = try c.decodeIfPresent(Bool.self, forKey: .ignoreExisting) ?? d.ignoreExisting
+        transfers = try c.decodeIfPresent(Int.self, forKey: .transfers) ?? d.transfers
+        checkers = try c.decodeIfPresent(Int.self, forKey: .checkers) ?? d.checkers
+        extraFlags = try c.decodeIfPresent(String.self, forKey: .extraFlags) ?? d.extraFlags
+        lastSyncDate = try c.decodeIfPresent(Date.self, forKey: .lastSyncDate) ?? d.lastSyncDate
+        lastSyncSuccess = try c.decodeIfPresent(Bool.self, forKey: .lastSyncSuccess) ?? d.lastSyncSuccess
+        lastSyncError = try c.decodeIfPresent(String.self, forKey: .lastSyncError) ?? d.lastSyncError
     }
 }

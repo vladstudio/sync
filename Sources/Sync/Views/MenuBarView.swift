@@ -17,8 +17,8 @@ struct MenuBarView: View {
                     openWindow(id: "manage")
                     NSApp.activate()
                 } label: {
-                    Text(config.name + "\t") + Text(Image(systemName: statusIcon(running: state.isRunning, success: config.lastSyncSuccess)))
-                        .foregroundColor(statusColor(running: state.isRunning, success: config.lastSyncSuccess).opacity(0.6))
+                    Text(config.name + "\t") + Text(Image(systemName: SyncStatusDisplay.icon(running: state.isRunning, success: config.lastSyncSuccess)))
+                        .foregroundColor(SyncStatusDisplay.color(running: state.isRunning, success: config.lastSyncSuccess).opacity(0.6))
                         .font(.caption2)
                 }
             }
@@ -49,7 +49,10 @@ struct MenuBarView: View {
         }.keyboardShortcut("q")
     }
 
-    private func statusIcon(running: Bool, success: Bool?) -> String {
+}
+
+enum SyncStatusDisplay {
+    static func icon(running: Bool, success: Bool?) -> String {
         if running { return "arrow.triangle.2.circlepath" }
         switch success {
         case true: return "checkmark.circle.fill"
@@ -58,7 +61,7 @@ struct MenuBarView: View {
         }
     }
 
-    private func statusColor(running: Bool, success: Bool?) -> Color {
+    static func color(running: Bool, success: Bool?) -> Color {
         if running { return .secondary }
         switch success {
         case true: return .green
@@ -66,5 +69,4 @@ struct MenuBarView: View {
         default: return .secondary
         }
     }
-
 }

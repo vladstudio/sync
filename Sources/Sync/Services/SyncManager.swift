@@ -58,8 +58,20 @@ final class SyncManager: ObservableObject {
     private var notificationAuthorized: Bool?
 
     struct SyncState {
+        private static let maxLogSize = 512 * 1024 // 512 KB
+
         var isRunning = false
-        var log = ""
+        var log = "" {
+            didSet {
+                if log.utf8.count > Self.maxLogSize {
+                    let dropCount = log.utf8.count - Self.maxLogSize
+                    let dropIndex = log.utf8.index(log.utf8.startIndex, offsetBy: dropCount)
+                    // Advance to the next newline to avoid splitting a line
+                    let trimIndex = log[dropIndex...].firstIndex(of: "\n").map(log.index(after:)) ?? dropIndex
+                    log = String(log[trimIndex...])
+                }
+            }
+        }
     }
 
     private enum SyncOutcome {
@@ -69,6 +81,8 @@ final class SyncManager: ObservableObject {
     }
 
     private var schedulesStarted = false
+
+    private var rclone: RcloneService { RcloneService(rclonePath: store.settings.rclonePath) }
 
     init(store: ConfigStore) {
         self.store = store
@@ -99,10 +113,7 @@ final class SyncManager: ObservableObject {
     }
 
     func setupSchedule(for config: SyncConfig) {
-        timers[config.id]?.invalidate()
-        timers.removeValue(forKey: config.id)
-        watchers[config.id]?.stop()
-        watchers.removeValue(forKey: config.id)
+        teardownSchedule(for: config.id)
 
         switch config.schedule {
         case .manual:
@@ -169,7 +180,7 @@ final class SyncManager: ObservableObject {
         syncGeneration[id] = gen
         syncStates[id] = SyncState(isRunning: true, log: dryRun ? "=== DRY RUN ===\n" : "")
 
-        let rclone = RcloneService(rclonePath: store.settings.rclonePath)
+        let rclone = self.rclone
         Task {
             let (outcome, remaining) = await self.executeSync(id: id, config: config, dryRun: dryRun, force: force, rclone: rclone)
             await MainActor.run {
@@ -217,12 +228,16 @@ final class SyncManager: ObservableObject {
                 // Retry once after removing a stale bisync lock file
                 if !retried, let lockPath = Self.parseLockPath(from: log) {
                     try? FileManager.default.removeItem(atPath: lockPath)
-                    self.syncStates[id]?.log.append(log)
-                    self.syncStates[id]?.log.append("\n--- Removed stale lock file, retrying ---\n\n")
+                    await MainActor.run {
+                        self.syncStates[id]?.log.append(log)
+                        self.syncStates[id]?.log.append("\n--- Removed stale lock file, retrying ---\n\n")
+                    }
                     return await executeSync(id: id, config: config, dryRun: dryRun, force: force, rclone: rclone, retried: true)
                 }
-                self.syncStates[id]?.log.append(log)
-                self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
+                await MainActor.run {
+                    self.syncStates[id]?.log.append(log)
+                    self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
+                }
             }
         }
         return (outcome, buffer.drain())
@@ -257,7 +272,7 @@ final class SyncManager: ObservableObject {
         store.saveConfigs()
         persistLog(id: id)
 
-        if !dryRun, outcome == .failure {
+        if outcome == .failure {
             postFailureNotification(name: store.configs[i].name)
         }
     }
@@ -323,26 +338,26 @@ final class SyncManager: ObservableObject {
     }
 
     func revealBackups(id: UUID) {
-        let dir = ConfigStore.backupsDir.appendingPathComponent(id.uuidString)
+        let dir = ConfigStore.backupDir(for: id)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(dir)
     }
 
     func cleanupBackups(config: SyncConfig) async throws {
-        let localDir = ConfigStore.backupsDir.appendingPathComponent(config.id.uuidString)
+        let localDir = ConfigStore.backupDir(for: config.id)
         var errors: [String] = []
 
-        if FileManager.default.fileExists(atPath: localDir.path) {
-            do {
-                try FileManager.default.removeItem(at: localDir)
-            } catch {
-                errors.append("Failed to delete local backups: \(error.localizedDescription)")
-            }
+        do {
+            try FileManager.default.removeItem(at: localDir)
+        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+            // Already gone — nothing to clean up
+        } catch {
+            errors.append("Failed to delete local backups: \(error.localizedDescription)")
         }
 
         if !config.remote.isEmpty {
-            let rclone = RcloneService(rclonePath: store.settings.rclonePath)
-            let remotePath = "\(config.remote):.rclone-backup/\(config.id.uuidString)"
+            let rclone = self.rclone
+            let remotePath = config.remoteBackupPath
             do {
                 try await rclone.purge(path: remotePath)
             } catch {

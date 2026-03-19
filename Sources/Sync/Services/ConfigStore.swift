@@ -8,14 +8,17 @@ final class ConfigStore: ObservableObject {
     @Published var settingsError: String?
 
     var lastError: String? {
-        get {
-            let parts = [configError, settingsError].compactMap { $0 }
-            return parts.isEmpty ? nil : parts.joined(separator: "\n")
-        }
-        set {
-            configError = newValue
-            settingsError = nil
-        }
+        let parts = [configError, settingsError].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+
+    func clearErrors() {
+        configError = nil
+        settingsError = nil
+    }
+
+    func setError(_ message: String) {
+        configError = message
     }
 
     private let encoder: JSONEncoder = {
@@ -44,6 +47,10 @@ final class ConfigStore: ObservableObject {
         return dir
     }()
 
+    nonisolated static func backupDir(for id: UUID) -> URL {
+        backupsDir.appendingPathComponent(id.uuidString)
+    }
+
     nonisolated static let logsDir: URL = {
         let dir = appSupportDir.appendingPathComponent("logs", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -54,9 +61,8 @@ final class ConfigStore: ObservableObject {
     private var settingsURL: URL { Self.appSupportDir.appendingPathComponent("settings.json") }
 
     func load() {
-        if FileManager.default.fileExists(atPath: configURL.path) {
+        if let data = try? Data(contentsOf: configURL) {
             do {
-                let data = try Data(contentsOf: configURL)
                 configs = try decoder.decode([SyncConfig].self, from: data)
                 configError = nil
             } catch {
@@ -64,9 +70,8 @@ final class ConfigStore: ObservableObject {
             }
         }
 
-        if FileManager.default.fileExists(atPath: settingsURL.path) {
+        if let data = try? Data(contentsOf: settingsURL) {
             do {
-                let data = try Data(contentsOf: settingsURL)
                 settings = try decoder.decode(AppSettings.self, from: data)
                 settingsError = nil
             } catch {
