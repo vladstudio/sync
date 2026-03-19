@@ -48,6 +48,7 @@ private final class OutputBuffer: @unchecked Sendable {
 @MainActor
 final class SyncManager: ObservableObject {
     @Published var syncStates: [UUID: SyncState] = [:]
+    @Published var pendingSelection: UUID?
 
     let store: ConfigStore
     private var timers: [UUID: Timer] = [:]
@@ -76,6 +77,7 @@ final class SyncManager: ObservableObject {
     func startAllOnce() {
         guard !schedulesStarted else { return }
         schedulesStarted = true
+        loadPersistedLogs()
         startAll()
     }
 
@@ -106,10 +108,10 @@ final class SyncManager: ObservableObject {
         case .manual:
             break
         case .interval(let minutes):
-            syncNow(id: config.id)
+            syncNow(id: config.id, scheduled: true)
             let timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(minutes * 60), repeats: true) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    self?.syncNow(id: config.id)
+                    self?.syncNow(id: config.id, scheduled: true)
                 }
             }
             timers[config.id] = timer
@@ -117,7 +119,7 @@ final class SyncManager: ObservableObject {
             guard config.direction != .remoteToLocal else { return }
             let watcher = FileWatcher(path: config.localPath) { [weak self] in
                 Task { @MainActor [weak self] in
-                    self?.syncNow(id: config.id)
+                    self?.syncNow(id: config.id, scheduled: true)
                 }
             }
             watcher.start()
@@ -136,9 +138,10 @@ final class SyncManager: ObservableObject {
         syncStates[id] ?? SyncState()
     }
 
-    func syncNow(id: UUID) {
+    func syncNow(id: UUID, scheduled: Bool = false, force: Bool = false) {
         guard let config = store.configs.first(where: { $0.id == id }) else { return }
-        runSync(config: config, dryRun: false)
+        if scheduled && config.lastSyncSuccess == false { return }
+        runSync(config: config, dryRun: false, force: force)
     }
 
     func dryRun(config: SyncConfig) {
@@ -147,7 +150,7 @@ final class SyncManager: ObservableObject {
 
     private var syncGeneration: [UUID: Int] = [:]
 
-    private func runSync(config: SyncConfig, dryRun: Bool) {
+    private func runSync(config: SyncConfig, dryRun: Bool, force: Bool = false) {
         let id = config.id
         guard !(syncStates[id]?.isRunning ?? false) else { return }
 
@@ -158,7 +161,7 @@ final class SyncManager: ObservableObject {
 
         let rclone = RcloneService(rclonePath: store.settings.rclonePath)
         Task {
-            let (outcome, remaining) = await self.executeSync(id: id, config: config, dryRun: dryRun, rclone: rclone)
+            let (outcome, remaining) = await self.executeSync(id: id, config: config, dryRun: dryRun, force: force, rclone: rclone)
             await MainActor.run {
                 // Skip if a newer sync has started for this id (cancel + re-sync race)
                 guard self.syncGeneration[id] == gen else { return }
@@ -171,7 +174,7 @@ final class SyncManager: ObservableObject {
     }
 
     private func executeSync(
-        id: UUID, config: SyncConfig, dryRun: Bool, rclone: RcloneService, retried: Bool = false
+        id: UUID, config: SyncConfig, dryRun: Bool, force: Bool = false, rclone: RcloneService, retried: Bool = false
     ) async -> (SyncOutcome, String) {
         let buffer = OutputBuffer()
         var outcome: SyncOutcome = .failure
@@ -179,6 +182,7 @@ final class SyncManager: ObservableObject {
             try await rclone.sync(
                 config: config,
                 dryRun: dryRun,
+                force: force,
                 onProcess: { [weak self] process in
                     Task { @MainActor [weak self] in
                         self?.runningProcesses[id] = process
@@ -205,7 +209,7 @@ final class SyncManager: ObservableObject {
                     try? FileManager.default.removeItem(atPath: lockPath)
                     self.syncStates[id]?.log.append(log)
                     self.syncStates[id]?.log.append("\n--- Removed stale lock file, retrying ---\n\n")
-                    return await executeSync(id: id, config: config, dryRun: dryRun, rclone: rclone, retried: true)
+                    return await executeSync(id: id, config: config, dryRun: dryRun, force: force, rclone: rclone, retried: true)
                 }
                 self.syncStates[id]?.log.append(log)
                 self.syncStates[id]?.log.append("\nError: \(error.localizedDescription)\n")
@@ -238,11 +242,48 @@ final class SyncManager: ObservableObject {
             store.configs[i].lastSyncDate = Date()
         }
         store.configs[i].lastSyncSuccess = (outcome == .success)
+        store.configs[i].lastSyncError = outcome == .failure
+            ? Self.parseErrors(from: syncStates[id]?.log ?? "") : nil
         store.saveConfigs()
+        persistLog(id: id)
 
         if !dryRun, outcome == .failure {
             postFailureNotification(name: store.configs[i].name)
         }
+    }
+
+    static func parseErrors(from log: String) -> String? {
+        let errors = log.split(separator: "\n", omittingEmptySubsequences: false)
+            .compactMap { line -> String? in
+                guard let range = line.range(of: "ERROR\\s*:", options: .regularExpression) else { return nil }
+                return String(line[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+            }
+        return errors.isEmpty ? nil : errors.joined(separator: "\n")
+    }
+
+    // MARK: - Log persistence
+
+    private static func logURL(for id: UUID) -> URL {
+        ConfigStore.logsDir.appendingPathComponent("\(id.uuidString).log")
+    }
+
+    private func loadPersistedLogs() {
+        for config in store.configs {
+            let url = Self.logURL(for: config.id)
+            guard let data = try? Data(contentsOf: url),
+                  let text = String(data: data, encoding: .utf8) else { continue }
+            syncStates[config.id] = SyncState(isRunning: false, log: text)
+        }
+    }
+
+    private func persistLog(id: UUID) {
+        let log = syncStates[id]?.log ?? ""
+        let url = Self.logURL(for: id)
+        try? log.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    func deletePersistedLog(id: UUID) {
+        try? FileManager.default.removeItem(at: Self.logURL(for: id))
     }
 
     private func postFailureNotification(name: String) {

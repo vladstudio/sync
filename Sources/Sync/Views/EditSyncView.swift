@@ -43,8 +43,21 @@ struct EditSyncView: View {
         }
     }
 
+    private var syncError: String? {
+        store.configs.first(where: { $0.id == config.id })?.lastSyncError
+    }
+
     var body: some View {
         Form {
+            if let error = syncError {
+                Section {
+                    Text(error)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
             Section {
                 TextField("Name", text: $config.name)
 

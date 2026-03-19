@@ -29,11 +29,21 @@ struct ManageSyncsView: View {
         .background(WindowConfigurator(configure: ManageSyncsView.configureWindow))
         .onAppear {
             WindowTracker.opened()
-            if selection == nil {
+            if let pending = manager.pendingSelection {
+                selection = pending
+                manager.pendingSelection = nil
+            } else if selection == nil {
                 selection = store.configs.first?.id ?? Self.addSyncID
             }
         }
         .onDisappear { WindowTracker.closed() }
+        .onChange(of: manager.pendingSelection) { _, newValue in
+            if let id = newValue {
+                selection = id
+                logInfo = nil
+                manager.pendingSelection = nil
+            }
+        }
         .onChange(of: selection) { _, newValue in
             logInfo = nil
             if newValue == Self.addSyncID {
@@ -49,6 +59,7 @@ struct ManageSyncsView: View {
                 if let config = deletingConfig {
                     manager.cancelSync(id: config.id)
                     manager.teardownSchedule(for: config.id)
+                    manager.deletePersistedLog(id: config.id)
                     if selection == config.id { selection = nil }
                     store.deleteConfig(id: config.id)
                 }
@@ -158,7 +169,12 @@ struct ManageSyncsView: View {
         EditSyncView(store: store, manager: manager, config: config, onDelete: {
             deletingConfig = config
         }) { updated in
+            var updated = updated
             let previous = store.configs.first(where: { $0.id == updated.id })
+            if previous?.lastSyncSuccess == false {
+                updated.lastSyncSuccess = nil
+                updated.lastSyncError = nil
+            }
             store.updateConfig(updated)
             if let previous, scheduleInputChanged(from: previous, to: updated) {
                 manager.teardownSchedule(for: updated.id)
@@ -172,6 +188,7 @@ struct ManageSyncsView: View {
         EditSyncView(store: store, manager: manager, config: draftConfig) { config in
             draftConfig = config
         }
+        .id(draftConfig.id)
     }
 
     private func logDetail(_ info: LogInfo) -> some View {
@@ -203,7 +220,10 @@ struct ManageSyncsView: View {
                 }
                 .disabled(!isConfigValid(draftConfig))
                 Button("Cancel") {
-                    selection = store.configs.first?.id ?? Self.addSyncID
+                    draftConfig = SyncConfig()
+                    if let first = store.configs.first {
+                        selection = first.id
+                    }
                 }
                 Button("Save") {
                     store.addConfig(draftConfig)
@@ -223,10 +243,21 @@ struct ManageSyncsView: View {
                     logInfo = LogInfo(configId: id, title: "Dry Run: \(config.name)")
                 }
                 .disabled(!isConfigValid(config))
-                Button("Sync Now") {
-                    manager.syncNow(id: id)
+                if config.lastSyncSuccess == false {
+                    Button("Retry") {
+                        manager.syncNow(id: id)
+                    }
+                    .disabled(manager.state(for: id).isRunning)
+                    Button("Sync Now with --force") {
+                        manager.syncNow(id: id, force: true)
+                    }
+                    .disabled(manager.state(for: id).isRunning)
+                } else {
+                    Button("Sync Now") {
+                        manager.syncNow(id: id)
+                    }
+                    .disabled(manager.state(for: id).isRunning)
                 }
-                .disabled(manager.state(for: id).isRunning)
                 Button("Log") {
                     logInfo = LogInfo(configId: id, title: "Log: \(config.name)")
                 }

@@ -59,7 +59,7 @@ struct RcloneService: Sendable {
             }
     }
 
-    func buildArguments(config: SyncConfig, dryRun: Bool = false) throws -> [String] {
+    func buildArguments(config: SyncConfig, dryRun: Bool = false, force: Bool = false) throws -> [String] {
         let remoteFull = "\(config.remote):\(config.remotePath)"
         var args: [String] = []
 
@@ -77,6 +77,9 @@ struct RcloneService: Sendable {
             args += ["--max-lock", "2m", "--resilient", "--recover", "--conflict-resolve", "newer"]
             if config.lastSyncDate == nil {
                 args.append("--resync")
+            }
+            if force {
+                args.append("--force")
             }
         } else {
             args += ["--update", "--check-first", "--fast-list"]
@@ -146,11 +149,12 @@ struct RcloneService: Sendable {
     func sync(
         config: SyncConfig,
         dryRun: Bool = false,
+        force: Bool = false,
         onProcess: @Sendable @escaping (Process) -> Void,
         onOutput: @Sendable @escaping (String) -> Void
     ) async throws {
         try checkBinary()
-        let arguments = try buildArguments(config: config, dryRun: dryRun)
+        let arguments = try buildArguments(config: config, dryRun: dryRun, force: force)
         try await runStreaming(arguments: arguments, onProcess: onProcess, onOutput: onOutput)
     }
 

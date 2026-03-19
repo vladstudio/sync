@@ -60,6 +60,7 @@ struct SyncConfig: Codable, Identifiable, Sendable, Equatable, Hashable {
     var extraFlags: String = ""
     var lastSyncDate: Date?
     var lastSyncSuccess: Bool?
+    var lastSyncError: String?
 
     init() {}
 
@@ -84,5 +85,6 @@ struct SyncConfig: Codable, Identifiable, Sendable, Equatable, Hashable {
         extraFlags = try c.decodeIfPresent(String.self, forKey: .extraFlags) ?? ""
         lastSyncDate = try c.decodeIfPresent(Date.self, forKey: .lastSyncDate)
         lastSyncSuccess = try c.decodeIfPresent(Bool.self, forKey: .lastSyncSuccess)
+        lastSyncError = try c.decodeIfPresent(String.self, forKey: .lastSyncError)
     }
 }

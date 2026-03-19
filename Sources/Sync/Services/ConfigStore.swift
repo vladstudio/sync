@@ -44,6 +44,12 @@ final class ConfigStore: ObservableObject {
         return dir
     }()
 
+    nonisolated static let logsDir: URL = {
+        let dir = appSupportDir.appendingPathComponent("logs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
     private var configURL: URL { Self.appSupportDir.appendingPathComponent("config.json") }
     private var settingsURL: URL { Self.appSupportDir.appendingPathComponent("settings.json") }
 
