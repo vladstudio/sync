@@ -37,6 +37,10 @@ struct MenuBarView: View {
             NSApp.activate()
         }
 
+        Button("About Sync") {
+            NSWorkspace.shared.open(URL(string: "https://sync.vlad.studio")!)
+        }
+
         Divider()
 
         Button("Quit") {
