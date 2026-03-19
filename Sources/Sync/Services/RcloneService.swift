@@ -96,6 +96,26 @@ struct RcloneService: Sendable {
             }
         }
 
+        if config.useChecksum {
+            if config.direction == .bidirectional {
+                args += ["--compare", "checksum"]
+            } else {
+                args.append("--checksum")
+            }
+        }
+
+        if config.ignoreExisting && config.direction != .bidirectional {
+            args.append("--ignore-existing")
+        }
+
+        if let n = config.transfers {
+            args += ["--transfers", String(n)]
+        }
+
+        if let n = config.checkers {
+            args += ["--checkers", String(n)]
+        }
+
         if let bw = config.bandwidthLimit, !bw.isEmpty {
             args += ["--bwlimit", bw]
         }

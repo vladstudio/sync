@@ -1,9 +1,11 @@
 import SwiftUI
+import ServiceManagement
 
 struct SettingsView: View {
     @ObservedObject var store: ConfigStore
     @State private var pathStatus: PathStatus = .unknown
     @State private var validationTask: Task<Void, Never>?
+    @State private var startOnLogin = SMAppService.mainApp.status == .enabled
 
     private enum PathStatus {
         case unknown, valid(String), invalid
@@ -11,6 +13,21 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Toggle("Start on Login", isOn: $startOnLogin)
+                .onChange(of: startOnLogin) { _, newValue in
+                    do {
+                        if newValue {
+                            try SMAppService.mainApp.register()
+                        } else {
+                            try SMAppService.mainApp.unregister()
+                        }
+                        store.settings.startOnLogin = newValue
+                        store.saveSettings()
+                    } catch {
+                        startOnLogin = !newValue
+                    }
+                }
+
             HStack {
                 TextField("rclone path", text: $store.settings.rclonePath)
                 Button("Browse") {

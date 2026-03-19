@@ -53,6 +53,10 @@ struct SyncConfig: Codable, Identifiable, Sendable, Equatable, Hashable {
     var keepDeletedFiles: Bool = true
     var bandwidthLimit: String? = nil
     var excludePatterns: [String] = [".DS_Store"]
+    var useChecksum: Bool = false
+    var ignoreExisting: Bool = false
+    var transfers: Int? = nil
+    var checkers: Int? = nil
     var extraFlags: String = ""
     var lastSyncDate: Date? = nil
     var lastSyncSuccess: Bool? = nil
@@ -73,6 +77,10 @@ struct SyncConfig: Codable, Identifiable, Sendable, Equatable, Hashable {
         keepDeletedFiles = try c.decodeIfPresent(Bool.self, forKey: .keepDeletedFiles) ?? true
         bandwidthLimit = try c.decodeIfPresent(String.self, forKey: .bandwidthLimit)
         excludePatterns = try c.decodeIfPresent([String].self, forKey: .excludePatterns) ?? [".DS_Store"]
+        useChecksum = try c.decodeIfPresent(Bool.self, forKey: .useChecksum) ?? false
+        ignoreExisting = try c.decodeIfPresent(Bool.self, forKey: .ignoreExisting) ?? false
+        transfers = try c.decodeIfPresent(Int.self, forKey: .transfers)
+        checkers = try c.decodeIfPresent(Int.self, forKey: .checkers)
         extraFlags = try c.decodeIfPresent(String.self, forKey: .extraFlags) ?? ""
         lastSyncDate = try c.decodeIfPresent(Date.self, forKey: .lastSyncDate)
         lastSyncSuccess = try c.decodeIfPresent(Bool.self, forKey: .lastSyncSuccess)

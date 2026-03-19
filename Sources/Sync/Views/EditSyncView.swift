@@ -170,6 +170,28 @@ struct EditSyncView: View {
             }
 
             Section(isExpanded: $showAdvanced) {
+                Toggle("Compare by checksum", isOn: $config.useChecksum)
+                    .help("Use file hash instead of modification time + size (slower but more accurate)")
+
+                if config.direction != .bidirectional {
+                    Toggle("Skip existing files", isOn: $config.ignoreExisting)
+                        .help("Don't update files that already exist on the destination")
+                }
+
+                Picker("Parallel transfers", selection: $config.transfers) {
+                    Text("Default (4)").tag(nil as Int?)
+                    ForEach([1, 2, 4, 8, 16, 32], id: \.self) { n in
+                        Text("\(n)").tag(n as Int?)
+                    }
+                }
+
+                Picker("Parallel checkers", selection: $config.checkers) {
+                    Text("Default (8)").tag(nil as Int?)
+                    ForEach([1, 2, 4, 8, 16, 32, 64], id: \.self) { n in
+                        Text("\(n)").tag(n as Int?)
+                    }
+                }
+
                 TextField("Bandwidth limit", text: Binding(
                     get: { config.bandwidthLimit ?? "" },
                     set: { config.bandwidthLimit = $0.isEmpty ? nil : $0 }
@@ -184,8 +206,17 @@ struct EditSyncView: View {
                         .frame(height: 80)
                 }
 
-                TextField("Extra flags", text: $config.extraFlags)
-                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    TextField("Extra rclone flags", text: $config.extraFlags)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        NSWorkspace.shared.open(URL(string: "https://rclone.org/flags/")!)
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Open rclone flags documentation")
+                }
             } header: {
                 Button { showAdvanced.toggle() } label: {
                     Text("Advanced")

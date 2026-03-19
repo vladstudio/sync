@@ -5,8 +5,6 @@ struct ManageSyncsView: View {
     @ObservedObject var manager: SyncManager
     @State private var selection: UUID?
     @State private var draftConfig = SyncConfig()
-    @State private var editDrafts: [UUID: SyncConfig] = [:]
-    @State private var editResetTokens: [UUID: Int] = [:]
     @State private var deletingConfig: SyncConfig?
     @State private var logInfo: LogInfo?
 
@@ -52,8 +50,6 @@ struct ManageSyncsView: View {
                     manager.cancelSync(id: config.id)
                     manager.teardownSchedule(for: config.id)
                     if selection == config.id { selection = nil }
-                    editDrafts.removeValue(forKey: config.id)
-                    editResetTokens.removeValue(forKey: config.id)
                     store.deleteConfig(id: config.id)
                 }
                 deletingConfig = nil
@@ -159,12 +155,17 @@ struct ManageSyncsView: View {
     }
 
     private func editDetail(id: UUID, config: SyncConfig) -> some View {
-        EditSyncView(store: store, manager: manager, config: editDrafts[id] ?? config, onDelete: {
+        EditSyncView(store: store, manager: manager, config: config, onDelete: {
             deletingConfig = config
         }) { updated in
-            editDrafts[id] = updated
+            let previous = store.configs.first(where: { $0.id == updated.id })
+            store.updateConfig(updated)
+            if let previous, scheduleInputChanged(from: previous, to: updated) {
+                manager.teardownSchedule(for: updated.id)
+                manager.setupSchedule(for: updated)
+            }
         }
-        .id("\(id.uuidString)-\(editResetTokens[id, default: 0])")
+        .id(id)
     }
 
     private var createDetail: some View {
@@ -213,41 +214,22 @@ struct ManageSyncsView: View {
                 .disabled(!isConfigValid(draftConfig))
             }
         } else if let id = selection, let config = store.configs.first(where: { $0.id == id }) {
-            let draft = editDrafts[id] ?? config
-            let hasChanges = draft != config
-
             headerBar {
-                Text(draft.name.isEmpty ? "Untitled" : draft.name)
+                Text(config.name.isEmpty ? "Untitled" : config.name)
                     .font(.headline)
                 Spacer()
                 Button("Dry Run") {
-                    manager.dryRun(config: draft)
-                    logInfo = LogInfo(configId: id, title: "Dry Run: \(draft.name)")
+                    manager.dryRun(config: config)
+                    logInfo = LogInfo(configId: id, title: "Dry Run: \(config.name)")
                 }
-                .disabled(!isConfigValid(draft))
+                .disabled(!isConfigValid(config))
                 Button("Sync Now") {
                     manager.syncNow(id: id)
                 }
                 .disabled(manager.state(for: id).isRunning)
                 Button("Log") {
-                    logInfo = LogInfo(configId: id, title: "Log: \(draft.name)")
+                    logInfo = LogInfo(configId: id, title: "Log: \(config.name)")
                 }
-                Button("Revert") {
-                    editDrafts.removeValue(forKey: id)
-                    editResetTokens[id, default: 0] += 1
-                }
-                .disabled(!hasChanges)
-                Button("Save") {
-                    store.updateConfig(draft)
-                    if scheduleInputChanged(from: config, to: draft) {
-                        manager.teardownSchedule(for: id)
-                        manager.setupSchedule(for: draft)
-                    }
-                    editDrafts.removeValue(forKey: id)
-                    editResetTokens[id, default: 0] += 1
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!hasChanges || !isConfigValid(draft))
             }
         } else {
             headerBar {

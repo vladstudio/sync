@@ -1,30 +1,11 @@
 import SwiftUI
-import ServiceManagement
 
 struct MenuBarView: View {
     @ObservedObject var store: ConfigStore
     @ObservedObject var manager: SyncManager
     @Environment(\.openWindow) private var openWindow
-    @State private var startOnLogin = SMAppService.mainApp.status == .enabled
 
     var body: some View {
-        Toggle("Start on Login", isOn: $startOnLogin)
-            .onChange(of: startOnLogin) { _, newValue in
-                do {
-                    if newValue {
-                        try SMAppService.mainApp.register()
-                    } else {
-                        try SMAppService.mainApp.unregister()
-                    }
-                    store.settings.startOnLogin = newValue
-                    store.saveSettings()
-                } catch {
-                    startOnLogin = !newValue
-                }
-            }
-
-        Divider()
-
         if store.configs.isEmpty {
             Text("No syncs configured")
                 .foregroundStyle(.secondary)
