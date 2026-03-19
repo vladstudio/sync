@@ -5,47 +5,21 @@ struct MenuBarView: View {
     @ObservedObject var manager: SyncManager
     @Environment(\.openWindow) private var openWindow
 
-    private var erroredConfigs: [SyncConfig] {
-        store.configs.filter { $0.lastSyncSuccess == false }
-    }
-
-    private var healthyConfigs: [SyncConfig] {
-        store.configs.filter { $0.lastSyncSuccess != false }
-    }
-
     var body: some View {
         if store.configs.isEmpty {
             Text("No syncs configured")
                 .foregroundStyle(.secondary)
         } else {
-            if !erroredConfigs.isEmpty {
-                Text("Need attention")
-                    .foregroundStyle(.secondary)
-                ForEach(erroredConfigs) { config in
-                    Button {
-                        manager.pendingSelection = config.id
-                        openWindow(id: "manage")
-                        NSApp.activate()
-                    } label: {
-                        Text(config.name + "\t") + Text(Image(systemName: "xmark.circle.fill"))
-                            .foregroundColor(.red.opacity(0.6))
-                            .font(.caption2)
-                    }
-                }
-            }
-            if !healthyConfigs.isEmpty {
-                Text("Sync now")
-                    .foregroundStyle(.secondary)
-                ForEach(healthyConfigs) { config in
-                    let state = manager.state(for: config.id)
-                    Button {
-                        manager.syncNow(id: config.id)
-                    } label: {
-                        Text(config.name + "\t") + Text(Image(systemName: statusIcon(running: state.isRunning, success: config.lastSyncSuccess)))
-                            .foregroundColor(statusColor(running: state.isRunning, success: config.lastSyncSuccess).opacity(0.6))
-                            .font(.caption2)
-                    }
-                    .disabled(state.isRunning)
+            ForEach(store.configs) { config in
+                let state = manager.state(for: config.id)
+                Button {
+                    manager.pendingSelection = config.id
+                    openWindow(id: "manage")
+                    NSApp.activate()
+                } label: {
+                    Text(config.name + "\t") + Text(Image(systemName: statusIcon(running: state.isRunning, success: config.lastSyncSuccess)))
+                        .foregroundColor(statusColor(running: state.isRunning, success: config.lastSyncSuccess).opacity(0.6))
+                        .font(.caption2)
                 }
             }
         }
