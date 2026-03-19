@@ -8,7 +8,7 @@ struct ManageSyncsView: View {
     @State private var deletingConfig: SyncConfig?
     @State private var logInfo: LogInfo?
 
-    private static let addSyncID = UUID()
+    static let addSyncID = UUID()
     private let sidebarWidth: CGFloat = 240
     private let headerHeight: CGFloat = 64
 

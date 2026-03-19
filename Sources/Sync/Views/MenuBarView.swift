@@ -26,7 +26,8 @@ struct MenuBarView: View {
 
         Divider()
 
-        Button("Manage Syncs") {
+        Button("Add Sync") {
+            manager.pendingSelection = ManageSyncsView.addSyncID
             openWindow(id: "manage")
             NSApp.activate()
         }
